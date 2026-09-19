@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/apps/api/src/">
+    <Project Path="apps/api/src/Commerce.Domain/Commerce.Domain.csproj" />
+    <Project Path="apps/api/src/Commerce.Contracts/Commerce.Contracts.csproj" />
+    <Project Path="apps/api/src/Commerce.Application/Commerce.Application.csproj" />
+    <Project Path="apps/api/src/Commerce.Infrastructure/Commerce.Infrastructure.csproj" />
+    <Project Path="apps/api/src/Commerce.Api/Commerce.Api.csproj" />
+  </Folder>
+  <Folder Name="/apps/api/tests/">
+    <Project Path="apps/api/tests/Commerce.UnitTests/Commerce.UnitTests.csproj" />
+    <Project Path="apps/api/tests/Commerce.IntegrationTests/Commerce.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

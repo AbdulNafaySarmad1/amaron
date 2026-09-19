@@ -1,0 +1,10 @@
+**/bin
+**/obj
+.git
+.vs
+.idea
+.agent-logs
+.opencode
+graphify-out
+TestResults
+.env
