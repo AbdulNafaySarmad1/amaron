@@ -17,12 +17,15 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
         if (existing is not null) return await ReplayAsync(existing, hash, customerId, cancellationToken);
 
         await using var transaction = await db.BeginTransactionAsync(cancellationToken);
-        var cart = await db.Carts.Include(c => c.Items).SingleOrDefaultAsync(c => c.CustomerId == customerId, cancellationToken)
+        var cartId = await db.Carts.AsNoTracking().Where(c => c.CustomerId == customerId).Select(c => (Guid?)c.Id).SingleOrDefaultAsync(cancellationToken)
             ?? throw CommerceErrors.Validation("The cart is empty.");
-        await db.LockCartAsync(cart.Id, cancellationToken);
+        await db.LockCartAsync(cartId, cancellationToken);
 
         existing = await db.IdempotencyRecords.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == customerId && x.Key == idempotencyKey, cancellationToken);
         if (existing is not null) return await ReplayAsync(existing, hash, customerId, cancellationToken);
+        // Mutable cart state must be read after the lock. A waiter must not act on
+        // items tracked before another checkout committed and cleared the cart.
+        var cart = await db.Carts.Include(c => c.Items).SingleAsync(c => c.Id == cartId, cancellationToken);
         if (cart.Items.Count == 0) throw CommerceErrors.Validation("The cart is empty.");
 
         var variantIds = cart.Items.Select(x => x.VariantId).Order().ToArray();
@@ -72,7 +75,8 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        foreach (var variantId in variantIds) await cache.RemoveByTagAsync($"inventory:{variantId}", cancellationToken);
+        await cache.RemoveByTagAsync("products", CancellationToken.None);
+        await cache.RemoveByTagAsync("homepage", CancellationToken.None);
         return new CheckoutResultDto(MapOrder(order), false);
     }
 

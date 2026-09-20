@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace Commerce.Infrastructure;
 
@@ -20,7 +21,11 @@ public static class DependencyInjection
         var cacheProvider = configuration["CACHE_PROVIDER"]?.ToLowerInvariant() ?? "valkey";
         if (cacheEnabled && cacheProvider is "valkey" or "redis")
         {
-            services.AddStackExchangeRedisCache(options => options.Configuration = configuration["CACHE_CONNECTION"] ?? "localhost:6379,connectTimeout=500,abortConnect=false");
+            var redis = ConfigurationOptions.Parse(configuration["CACHE_CONNECTION"] ?? "localhost:6379,connectTimeout=500,abortConnect=false");
+            redis.AsyncTimeout = int.TryParse(configuration["CACHE_OPERATION_TIMEOUT_MS"], out var configuredTimeout)
+                ? Math.Clamp(configuredTimeout, 50, 5_000)
+                : 300;
+            services.AddStackExchangeRedisCache(options => options.ConfigurationOptions = redis);
         }
         else services.AddDistributedMemoryCache();
         services.AddHybridCache(options => { options.MaximumPayloadBytes = 1024 * 1024; options.MaximumKeyLength = 256; });

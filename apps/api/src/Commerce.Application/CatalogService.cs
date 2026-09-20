@@ -27,7 +27,7 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         try
         {
             ValidateSearch(request);
-            var query = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active);
+            var query = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Variants.Any(v => v.IsActive && v.Inventory != null));
             if (!string.IsNullOrWhiteSpace(request.Query))
             {
                 var term = request.Query.Trim().ToLower();
@@ -35,8 +35,9 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
             }
             if (!string.IsNullOrWhiteSpace(request.Category)) query = query.Where(p => p.Category.Slug == request.Category);
             if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
-            if (request.MinPrice is not null) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price >= request.MinPrice));
-            if (request.MaxPrice is not null) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price <= request.MaxPrice));
+            if (request.MinPrice is not null || request.MaxPrice is not null)
+                query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory != null &&
+                    (request.MinPrice == null || v.Price >= request.MinPrice) && (request.MaxPrice == null || v.Price <= request.MaxPrice)));
             if (request.MinimumRating is not null) query = query.Where(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) >= request.MinimumRating);
             if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0));
 
@@ -88,20 +89,20 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
     public async Task<IReadOnlyList<ProductCardDto>> GetBatchAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
     {
         if (ids.Count is < 1 or > 50 || ids.Distinct().Count() != ids.Count) throw CommerceErrors.Validation("Provide between 1 and 50 unique product IDs.");
-        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => ids.Contains(p.Id) && p.Status == ProductStatus.Active)).ToListAsync(cancellationToken);
+        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => ids.Contains(p.Id) && p.Status == ProductStatus.Active && p.Variants.Any(v => v.IsActive && v.Inventory != null))).ToListAsync(cancellationToken);
         var byId = rows.Select(MapCard).ToDictionary(x => x.Id);
         return ids.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
     }
 
     public async Task<IReadOnlyList<ProductCardDto>> GetFeaturedAsync(int count, CancellationToken cancellationToken)
     {
-        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.IsFeatured).OrderBy(p => p.Title).Take(Math.Clamp(count, 1, 24))).ToListAsync(cancellationToken);
+        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.IsFeatured && p.Variants.Any(v => v.IsActive && v.Inventory != null)).OrderBy(p => p.Title).Take(Math.Clamp(count, 1, 24))).ToListAsync(cancellationToken);
         return rows.Select(MapCard).ToList();
     }
 
     public async Task<IReadOnlyList<ProductCardDto>> GetRelatedAsync(Guid productId, string category, int count, CancellationToken cancellationToken)
     {
-        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Id != productId && p.Category.Name == category).OrderByDescending(p => p.IsFeatured).Take(Math.Clamp(count, 1, 12))).ToListAsync(cancellationToken);
+        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Id != productId && p.Category.Name == category && p.Variants.Any(v => v.IsActive && v.Inventory != null)).OrderByDescending(p => p.IsFeatured).Take(Math.Clamp(count, 1, 12))).ToListAsync(cancellationToken);
         return rows.Select(MapCard).ToList();
     }
 
@@ -125,7 +126,7 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
     }
 
     private static IQueryable<CardRow> ProjectCards(IQueryable<Product> query) => query.Select(p => new CardRow(
-        p.Id, p.Slug, p.Title, p.Brand,
+        p.Id, p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Id).First(), p.Slug, p.Title, p.Brand,
         p.Assets.Where(a => a.Type == AssetType.PrimaryImage).OrderBy(a => a.SortOrder).Select(a => new ImageDto(a.Url, a.MimeType, a.Width, a.Height)).FirstOrDefault(),
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Price).First(),
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.ListPrice).First(),
@@ -133,7 +134,7 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0,
         p.Reviews.Count(r => r.IsApproved), p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0), p.IsFeatured));
 
-    private static ProductCardDto MapCard(CardRow x) => new(x.Id, x.Slug, x.Title, x.Brand, x.Image, new MoneyDto(x.Price, x.Currency), x.ListPrice is null ? null : new MoneyDto(x.ListPrice.Value, x.Currency), decimal.Round(x.Rating, 1), x.ReviewCount, x.Available ? "in_stock" : "out_of_stock", x.Featured ? ["featured"] : []);
+    private static ProductCardDto MapCard(CardRow x) => new(x.Id, x.DefaultVariantId, x.Slug, x.Title, x.Brand, x.Image, new MoneyDto(x.Price, x.Currency), x.ListPrice is null ? null : new MoneyDto(x.ListPrice.Value, x.Currency), decimal.Round(x.Rating, 1), x.ReviewCount, x.Available ? "in_stock" : "out_of_stock", x.Featured ? ["featured"] : []);
 
     private static void ValidateSearch(SearchRequest request)
     {
@@ -143,5 +144,5 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         if (request.MinimumRating is < 0 or > 5) throw CommerceErrors.Validation("Minimum rating must be between 0 and 5.");
     }
 
-    private sealed record CardRow(Guid Id, string Slug, string Title, string Brand, ImageDto? Image, decimal Price, decimal? ListPrice, string Currency, decimal Rating, int ReviewCount, bool Available, bool Featured);
+    private sealed record CardRow(Guid Id, Guid DefaultVariantId, string Slug, string Title, string Brand, ImageDto? Image, decimal Price, decimal? ListPrice, string Currency, decimal Rating, int ReviewCount, bool Available, bool Featured);
 }

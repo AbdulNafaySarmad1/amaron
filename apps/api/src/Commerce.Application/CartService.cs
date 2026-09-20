@@ -23,11 +23,12 @@ public sealed class CartService(ICommerceDbContext db, TimeProvider clock)
     {
         if (request.Quantity is < 1 or > 99) throw CommerceErrors.Validation("Quantity must be between 1 and 99.");
         var variant = await db.ProductVariants.AsNoTracking().Where(v => v.Id == request.VariantId && v.IsActive && v.Product.Status == ProductStatus.Active)
-            .Select(v => new { v.Id, Available = v.Inventory.QuantityOnHand }).SingleOrDefaultAsync(cancellationToken)
+            .Select(v => new { v.Id, v.Currency, Available = v.Inventory.QuantityOnHand }).SingleOrDefaultAsync(cancellationToken)
             ?? throw CommerceErrors.NotFound("Variant");
         if (variant.Available < request.Quantity) throw CommerceErrors.Conflict("insufficient_inventory", "The requested quantity is not currently available.");
 
-        var cart = await db.Carts.Include(c => c.Items).SingleOrDefaultAsync(c => c.CustomerId == customerId, cancellationToken);
+        await using var transaction = await db.BeginTransactionAsync(cancellationToken);
+        var cart = await GetLockedCartAsync(customerId, cancellationToken);
         if (cart is null)
         {
             cart = new Cart { Id = Guid.CreateVersion7(), CustomerId = customerId, UpdatedAt = clock.GetUtcNow() };
@@ -35,7 +36,9 @@ public sealed class CartService(ICommerceDbContext db, TimeProvider clock)
         }
         else
         {
-            await db.LockCartAsync(cart.Id, cancellationToken);
+            var currencies = await db.CartItems.AsNoTracking().Where(i => i.CartId == cart.Id).Select(i => i.Variant.Currency).Distinct().ToListAsync(cancellationToken);
+            if (currencies.Any(currency => !string.Equals(currency, variant.Currency, StringComparison.Ordinal)))
+                throw CommerceErrors.Conflict("mixed_currency", "All cart items must use one currency.");
         }
 
         var item = cart.Items.SingleOrDefault(x => x.VariantId == request.VariantId);
@@ -46,33 +49,50 @@ public sealed class CartService(ICommerceDbContext db, TimeProvider clock)
         }
         else item.Quantity = request.Quantity;
         cart.UpdatedAt = clock.GetUtcNow();
-        await db.SaveChangesAsync(cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException) { throw CommerceErrors.Conflict("concurrency_conflict", "The cart changed while it was being updated. Refresh it and try again."); }
+        catch (DbUpdateException) { throw CommerceErrors.Conflict("cart_conflict", "The cart changed while it was being created. Refresh it and try again."); }
 
         var result = await GetAsync(customerId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new CartMutationDto(result.CartId, result.TotalQuantity, result.Subtotal, result.Items.Single(x => x.VariantId == request.VariantId), result.Version);
     }
 
     public async Task<CartDto> RemoveItemAsync(string customerId, Guid variantId, CancellationToken cancellationToken)
     {
-        var cart = await db.Carts.Include(c => c.Items).SingleOrDefaultAsync(c => c.CustomerId == customerId, cancellationToken);
+        await using var transaction = await db.BeginTransactionAsync(cancellationToken);
+        var cart = await GetLockedCartAsync(customerId, cancellationToken);
         if (cart is null) return EmptyCart();
-        await db.LockCartAsync(cart.Id, cancellationToken);
         var item = cart.Items.SingleOrDefault(x => x.VariantId == variantId);
         if (item is not null) db.CartItems.Remove(item);
         cart.UpdatedAt = clock.GetUtcNow();
-        await db.SaveChangesAsync(cancellationToken);
-        return await GetAsync(customerId, cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException) { throw CommerceErrors.Conflict("concurrency_conflict", "The cart changed while it was being updated. Refresh it and try again."); }
+        var result = await GetAsync(customerId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
     }
 
     public async Task<CartDto> ClearAsync(string customerId, CancellationToken cancellationToken)
     {
-        var cart = await db.Carts.Include(c => c.Items).SingleOrDefaultAsync(c => c.CustomerId == customerId, cancellationToken);
+        await using var transaction = await db.BeginTransactionAsync(cancellationToken);
+        var cart = await GetLockedCartAsync(customerId, cancellationToken);
         if (cart is null) return EmptyCart();
-        await db.LockCartAsync(cart.Id, cancellationToken);
         db.CartItems.RemoveRange(cart.Items);
         cart.UpdatedAt = clock.GetUtcNow();
-        await db.SaveChangesAsync(cancellationToken);
-        return await GetAsync(customerId, cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException) { throw CommerceErrors.Conflict("concurrency_conflict", "The cart changed while it was being updated. Refresh it and try again."); }
+        var result = await GetAsync(customerId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    private async Task<Cart?> GetLockedCartAsync(string customerId, CancellationToken cancellationToken)
+    {
+        var cartId = await db.Carts.AsNoTracking().Where(c => c.CustomerId == customerId).Select(c => (Guid?)c.Id).SingleOrDefaultAsync(cancellationToken);
+        if (cartId is null) return null;
+        await db.LockCartAsync(cartId.Value, cancellationToken);
+        return await db.Carts.Include(c => c.Items).SingleAsync(c => c.Id == cartId.Value, cancellationToken);
     }
 
     private IQueryable<CartRow> QueryCart(string customerId) => db.Carts.AsNoTracking().Where(c => c.CustomerId == customerId).Select(c => new CartRow(c.Id, c.Version,

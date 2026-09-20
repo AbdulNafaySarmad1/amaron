@@ -157,6 +157,36 @@ public sealed class ShopperJourneyTests
     }
 
     [Fact]
+    public async Task Concurrent_checkout_of_the_same_cart_with_different_keys_creates_one_order()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        using var shopper = factory.CreateClient();
+        shopper.DefaultRequestHeaders.Add("X-Customer-Id", "same-cart-concurrent");
+        var product = await shopper.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones");
+        var variantId = product!.Product.Variants[0].Id;
+        (await shopper.PutAsJsonAsync("/api/cart/items", new SetCartItemRequest(variantId, 1))).EnsureSuccessStatusCode();
+
+        var checkout = new CheckoutRequest(new AddressRequest("Concurrent Shopper", "10 Main Street", null, "Austin", "TX", "78701", "US"));
+        static HttpRequestMessage Request(CheckoutRequest body, string key)
+        {
+            var message = new HttpRequestMessage(HttpMethod.Post, "/api/checkout/confirm") { Content = JsonContent.Create(body) };
+            message.Headers.Add("Idempotency-Key", key);
+            return message;
+        }
+
+        using var requestA = Request(checkout, "same-cart-a");
+        using var requestB = Request(checkout, "same-cart-b");
+        var responses = await Task.WhenAll(shopper.SendAsync(requestA), shopper.SendAsync(requestB));
+        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
+        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.BadRequest);
+        var orders = await shopper.GetFromJsonAsync<IReadOnlyList<OrderDto>>("/api/orders");
+        Assert.Single(orders!);
+        foreach (var response in responses) response.Dispose();
+    }
+
+    [Fact]
     public async Task Storefront_falls_back_to_postgres_when_distributed_cache_is_unavailable()
     {
         await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();

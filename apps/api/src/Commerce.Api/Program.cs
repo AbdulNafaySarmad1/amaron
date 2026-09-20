@@ -85,6 +85,8 @@ builder.Services.AddRequestTimeouts(options =>
     options.AddPolicy("autocomplete", TimeSpan.FromSeconds(2));
     options.AddPolicy("catalog", TimeSpan.FromSeconds(5));
     options.AddPolicy("search", TimeSpan.FromSeconds(8));
+    options.AddPolicy("private-read", TimeSpan.FromSeconds(8));
+    options.AddPolicy("cart-write", TimeSpan.FromSeconds(10));
     options.AddPolicy("checkout", TimeSpan.FromSeconds(20));
 });
 builder.Services.AddRateLimiter(options =>
@@ -171,11 +173,11 @@ api.MapGet("/search/suggestions", (string q, CatalogService service, Cancellatio
 api.MapGet("/storefront/home", (StorefrontService service, CancellationToken ct) => service.GetHomeAsync(ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog");
 api.MapGet("/storefront/products/{slug}", async (HttpContext http, string slug, StorefrontService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog");
 
-api.MapGet("/storefront/cart-summary", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetSummaryAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart");
-api.MapGet("/cart", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart");
-api.MapPut("/cart/items", async (HttpContext http, SetCartItemRequest request, CartService service, CancellationToken ct) => { NoStore(http); return await service.SetItemAsync(CustomerId(http, allowDevelopmentIdentity), request, ct); }).RequireRateLimiting("cart");
-api.MapDelete("/cart/items/{variantId:guid}", async (HttpContext http, Guid variantId, CartService service, CancellationToken ct) => { NoStore(http); return await service.RemoveItemAsync(CustomerId(http, allowDevelopmentIdentity), variantId, ct); }).RequireRateLimiting("cart");
-api.MapDelete("/cart", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.ClearAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart");
+api.MapGet("/storefront/cart-summary", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetSummaryAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+api.MapGet("/cart", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+api.MapPut("/cart/items", async (HttpContext http, SetCartItemRequest request, CartService service, CancellationToken ct) => { NoStore(http); return await service.SetItemAsync(CustomerId(http, allowDevelopmentIdentity), request, ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
+api.MapDelete("/cart/items/{variantId:guid}", async (HttpContext http, Guid variantId, CartService service, CancellationToken ct) => { NoStore(http); return await service.RemoveItemAsync(CustomerId(http, allowDevelopmentIdentity), variantId, ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
+api.MapDelete("/cart", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.ClearAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
 api.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest request, CheckoutService service, CancellationToken ct) =>
 {
     NoStore(http);
@@ -200,8 +202,8 @@ api.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest reques
         CommerceTelemetry.CheckoutDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 }).RequireRateLimiting("checkout").WithRequestTimeout("checkout");
-api.MapGet("/orders", async (HttpContext http, int? pageSize, CheckoutService service, CancellationToken ct) => { NoStore(http); return await service.GetOrdersAsync(CustomerId(http, allowDevelopmentIdentity), pageSize ?? 20, ct); }).RequireRateLimiting("cart");
-api.MapGet("/orders/{id:guid}", async (HttpContext http, Guid id, CheckoutService service, CancellationToken ct) => { NoStore(http); return await service.GetOrderAsync(CustomerId(http, allowDevelopmentIdentity), id, ct); }).RequireRateLimiting("cart");
+api.MapGet("/orders", async (HttpContext http, int? pageSize, CheckoutService service, CancellationToken ct) => { NoStore(http); return await service.GetOrdersAsync(CustomerId(http, allowDevelopmentIdentity), pageSize ?? 20, ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+api.MapGet("/orders/{id:guid}", async (HttpContext http, Guid id, CheckoutService service, CancellationToken ct) => { NoStore(http); return await service.GetOrderAsync(CustomerId(http, allowDevelopmentIdentity), id, ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
 
 var admin = api.MapGroup("/admin");
 admin.RequireRateLimiting("admin").WithRequestTimeout("catalog");
@@ -249,7 +251,7 @@ await app.RunAsync();
 static string ClientKey(HttpContext context)
 {
     var subject = context.User.FindFirstValue("sub");
-    if (!string.IsNullOrWhiteSpace(subject)) return subject;
+    if (!string.IsNullOrWhiteSpace(subject)) return subject[..Math.Min(subject.Length, 200)];
     var environment = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
     var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
     if (environment.IsDevelopment() && configuration.GetValue("ALLOW_DEVELOPMENT_IDENTITY", false) && context.Request.Headers.TryGetValue("X-Customer-Id", out var customer) && !string.IsNullOrWhiteSpace(customer)) return customer.ToString()[..Math.Min(customer.ToString().Length, 200)];
@@ -295,7 +297,11 @@ static void EnsureAdmin(HttpContext context, bool allowDevelopmentIdentity)
 static string CustomerId(HttpContext context, bool allowDevelopmentIdentity)
 {
     var subject = context.User.FindFirstValue("sub");
-    if (!string.IsNullOrWhiteSpace(subject)) return subject;
+    if (!string.IsNullOrWhiteSpace(subject))
+    {
+        if (subject.Length > 200) throw new CommerceException("invalid_identity", "The authenticated subject exceeds the supported identity length.", 401);
+        return subject;
+    }
     if (allowDevelopmentIdentity && context.Request.Headers.TryGetValue("X-Customer-Id", out var values) && !string.IsNullOrWhiteSpace(values)) return values.ToString()[..Math.Min(values.ToString().Length, 200)];
     throw new CommerceException("authentication_required", "Authentication is required.", 401);
 }

@@ -1,8 +1,13 @@
 **/bin/
 **/obj/
+**/node_modules/
+**/.next/
+**/out/
+*.tsbuildinfo
 .vs/
 .idea/
 .env
+*.env.local
 TestResults/
 *.user
 *.suo
