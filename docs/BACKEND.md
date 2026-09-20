@@ -23,6 +23,8 @@ Catalog owns products, categories, variants, assets, prices, and inventory. Sear
 
 Modules share IDs and contracts, never EF entities. `Commerce.Application` depends on Domain and Contracts; Infrastructure implements application ports; API is the composition root.
 
+Administrative product and inventory writes use strong resource versions through `ETag` and `If-Match`. A committed mutation invalidates exact HybridCache tags and public ASP.NET output-cache tags. Stale writers receive `409 concurrency_conflict`; missing preconditions receive `428 precondition_required`.
+
 ## Request and data flow
 
 ```text
@@ -55,3 +57,7 @@ Indexes are query-driven. Search uses bounded offset pagination for the assignme
 ## Language decision gates
 
 Rust is not justified: there is no untrusted native parser, memory-safety boundary, or measured CPU workload that .NET libraries cannot handle. Go is not justified: HTTP/SSE fan-out is not a current requirement and ASP.NET Core supports the required asynchronous load. Neither service is created. Re-evaluate only with a measured, isolated workload and a stable disposable contract.
+
+## Operations
+
+Migrations are a deployment concern. `APPLY_MIGRATIONS=true` is intended only for the single-instance development container; production deployment jobs should run migrations before replicas start. Configure `AUTH_AUTHORITY` and `AUTH_AUDIENCE` for JWT validation. Configure `OTEL_EXPORTER_OTLP_ENDPOINT` to export ASP.NET Core traces, HTTP client traces, runtime metrics, and commerce-specific cache/search/checkout/order metrics. PostgreSQL controls readiness; Valkey and telemetry remain fail-open accelerators.

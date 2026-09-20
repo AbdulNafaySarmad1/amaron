@@ -1,6 +1,7 @@
 using Commerce.Contracts;
 using Commerce.Domain;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 
 namespace Commerce.Application;
 
@@ -21,32 +22,48 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
 
     public async Task<ProductPageDto> SearchAsync(SearchRequest request, CancellationToken cancellationToken)
     {
-        ValidateSearch(request);
-        var query = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active);
-        if (!string.IsNullOrWhiteSpace(request.Query))
+        var started = Stopwatch.GetTimestamp();
+        using var activity = CommerceTelemetry.ActivitySource.StartActivity("catalog.search");
+        try
         {
-            var term = request.Query.Trim().ToLower();
-            query = query.Where(p => p.Title.ToLower().Contains(term) || p.Brand.ToLower().Contains(term) || p.Description.ToLower().Contains(term));
+            ValidateSearch(request);
+            var query = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active);
+            if (!string.IsNullOrWhiteSpace(request.Query))
+            {
+                var term = request.Query.Trim().ToLower();
+                query = query.Where(p => p.Title.ToLower().Contains(term) || p.Brand.ToLower().Contains(term) || p.Description.ToLower().Contains(term));
+            }
+            if (!string.IsNullOrWhiteSpace(request.Category)) query = query.Where(p => p.Category.Slug == request.Category);
+            if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
+            if (request.MinPrice is not null) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price >= request.MinPrice));
+            if (request.MaxPrice is not null) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price <= request.MaxPrice));
+            if (request.MinimumRating is not null) query = query.Where(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) >= request.MinimumRating);
+            if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0));
+
+            query = request.Sort?.ToLowerInvariant() switch
+            {
+                "price-asc" => query.OrderBy(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
+                "price-desc" => query.OrderByDescending(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
+                "rating" => query.OrderByDescending(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0).ThenBy(p => p.Id),
+                "newest" => query.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
+                _ => query.OrderBy(p => p.Title).ThenBy(p => p.Id)
+            };
+
+            var total = await query.CountAsync(cancellationToken);
+            var rows = await ProjectCards(query.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize)).ToListAsync(cancellationToken);
+            activity?.SetTag("commerce.search.results", total);
+            return new ProductPageDto(rows.Select(MapCard).ToList(), request.Page, request.PageSize, total, (int)Math.Ceiling((double)total / request.PageSize));
         }
-        if (!string.IsNullOrWhiteSpace(request.Category)) query = query.Where(p => p.Category.Slug == request.Category);
-        if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
-        if (request.MinPrice is not null) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price >= request.MinPrice));
-        if (request.MaxPrice is not null) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Price <= request.MaxPrice));
-        if (request.MinimumRating is not null) query = query.Where(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) >= request.MinimumRating);
-        if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0));
-
-        query = request.Sort?.ToLowerInvariant() switch
+        catch (Exception exception)
         {
-            "price-asc" => query.OrderBy(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
-            "price-desc" => query.OrderByDescending(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
-            "rating" => query.OrderByDescending(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0).ThenBy(p => p.Id),
-            "newest" => query.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
-            _ => query.OrderBy(p => p.Title).ThenBy(p => p.Id)
-        };
-
-        var total = await query.CountAsync(cancellationToken);
-        var rows = await ProjectCards(query.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize)).ToListAsync(cancellationToken);
-        return new ProductPageDto(rows.Select(MapCard).ToList(), request.Page, request.PageSize, total, (int)Math.Ceiling((double)total / request.PageSize));
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.SetTag("error.type", exception.GetType().FullName);
+            throw;
+        }
+        finally
+        {
+            CommerceTelemetry.SearchDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        }
     }
 
     public async Task<IReadOnlyList<SuggestionDto>> SuggestAsync(string query, CancellationToken cancellationToken)

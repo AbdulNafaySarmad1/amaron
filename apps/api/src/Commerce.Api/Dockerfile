@@ -5,7 +5,7 @@ RUN dotnet restore Commerce.slnx && dotnet publish apps/api/src/Commerce.Api/Com
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 wget && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app .
 USER $APP_UID
 EXPOSE 8080

@@ -30,6 +30,10 @@ DELETE /api/cart/items/{variantId}
 POST /api/checkout/confirm       Idempotency-Key required
 GET  /api/orders
 GET  /api/orders/{id}
+GET  /api/admin/products/{id}   admin or catalog.write
+PUT  /api/admin/products/{id}   If-Match required
+GET  /api/admin/inventory/{id}  admin or catalog.write
+PUT  /api/admin/inventory/{id}  If-Match required
 ```
 
 See `docs/` for boundaries, caching, resilience, security, and performance decisions.

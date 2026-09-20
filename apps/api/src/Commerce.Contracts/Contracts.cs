@@ -15,6 +15,10 @@ public sealed record ProductRailDto(string Id, string Title, IReadOnlyList<Produ
 public sealed record HeroDto(string Eyebrow, string Title, string Subtitle, string? ProductSlug);
 public sealed record HomeDto(IReadOnlyList<CategoryDto> Navigation, HeroDto? Hero, IReadOnlyList<ProductRailDto> Rails, bool IsDegraded);
 public sealed record StorefrontProductDto(ProductDetailDto Product, IReadOnlyList<ProductCardDto> Recommendations, bool IsDegraded);
+public sealed record UpdateProductRequest(string Title, string Brand, string Description, bool IsFeatured, string Status);
+public sealed record UpdateInventoryRequest(int QuantityOnHand);
+public sealed record AdminProductDto(Guid Id, string Slug, string Title, string Brand, string Description, string Status, bool IsFeatured, string Version);
+public sealed record InventoryDto(Guid VariantId, int QuantityOnHand, string Version);
 
 public sealed record CartItemDto(Guid VariantId, Guid ProductId, string Slug, string Title, string Variant, ImageDto? Image, int Quantity, MoneyDto UnitPrice, MoneyDto LineTotal, string AvailabilityHint);
 public sealed record CartDto(Guid CartId, int TotalQuantity, MoneyDto Subtotal, IReadOnlyList<CartItemDto> Items, string Version);
