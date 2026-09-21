@@ -98,6 +98,7 @@ services:
       AUTH_METADATA_ADDRESS: http://keycloak:8080/realms/commerce/.well-known/openid-configuration
       AUTH_AUDIENCE: commerce-api
       AUTH_ROLE_CLIENT_ID: commerce-api
+      PUBLIC_HOSTS: ${PUBLIC_HOSTS:-localhost;127.0.0.1;api}
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
