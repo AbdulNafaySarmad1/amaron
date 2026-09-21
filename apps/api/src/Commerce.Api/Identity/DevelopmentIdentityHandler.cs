@@ -53,6 +53,23 @@ public sealed class DevelopmentIdentityHandler(
                 new(CommerceClaims.Permission, CommercePermissions.PromotionsView),
                 new(CommerceClaims.Permission, CommercePermissions.PromotionsManage),
                 new(CommerceClaims.Permission, CommercePermissions.OperationsAudit),
+                new(CommerceClaims.Permission, CommercePermissions.SuppliersView),
+                new(CommerceClaims.Permission, CommercePermissions.SuppliersManage),
+                new(CommerceClaims.Permission, CommercePermissions.ProcurementView),
+                new(CommerceClaims.Permission, CommercePermissions.ProcurementManage),
+                new(CommerceClaims.Permission, CommercePermissions.ProcurementApprove),
+                new(CommerceClaims.Permission, CommercePermissions.ReceivingView),
+                new(CommerceClaims.Permission, CommercePermissions.ReceivingManage),
+                new(CommerceClaims.Permission, CommercePermissions.InvoicesView),
+                new(CommerceClaims.Permission, CommercePermissions.InvoicesManage),
+                new(CommerceClaims.Permission, CommercePermissions.InvoicesMatch),
+                new(CommerceClaims.Permission, CommercePermissions.WarehouseTasksView),
+                new(CommerceClaims.Permission, CommercePermissions.WarehouseTasksManage),
+                new(CommerceClaims.Permission, CommercePermissions.CycleCountsView),
+                new(CommerceClaims.Permission, CommercePermissions.CycleCountsManage),
+                new(CommerceClaims.Permission, CommercePermissions.CycleCountsReconcile),
+                new(CommerceClaims.Permission, CommercePermissions.StockTransfersView),
+                new(CommerceClaims.Permission, CommercePermissions.StockTransfersManage),
                 new(CommerceClaims.Permission, CommercePermissions.AdministrationAccess)
             ]);
         }

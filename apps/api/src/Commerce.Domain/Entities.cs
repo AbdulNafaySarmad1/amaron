@@ -313,6 +313,8 @@ public sealed class InventoryLedgerEntry
     public Guid WarehouseId { get; set; }
     public Guid? LocationId { get; set; }
     public int QuantityDelta { get; set; }
+    public InventoryState State { get; set; } = InventoryState.Available;
+    public Guid? LotId { get; set; }
     public InventoryMovementReason Reason { get; set; }
     public string ReferenceType { get; set; } = "";
     public string ReferenceId { get; set; } = "";

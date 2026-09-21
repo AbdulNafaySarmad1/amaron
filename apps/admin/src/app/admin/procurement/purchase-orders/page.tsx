@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ apiBase: "/api/admin/supply-chain", title: "Purchase orders", eyebrow: "PROCUREMENT / COMMITMENTS", description: "Track versioned purchase commitments through approval and physical receipt.", endpoint: "/purchase-orders", empty: "No purchase orders are available.", approve: { path: "/purchase-orders/:id/approve", label: "Approve selected" } }} />; }

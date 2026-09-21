@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ apiBase: "/api/admin/supply-chain", title: "Supplier invoices", eyebrow: "FINANCE / MATCHING", description: "Review ingested fiscal documents and matching state. Ingestion never posts stock.", endpoint: "/invoices", empty: "No supplier invoices have been ingested." }} />; }

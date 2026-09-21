@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ apiBase: "/api/admin/supply-chain", title: "Inbound shipments", eyebrow: "WAREHOUSE / EXPECTED", description: "Monitor supplier ASNs and expected arrivals without treating them as sellable inventory.", endpoint: "/shipments", empty: "No inbound shipments are expected." }} />; }

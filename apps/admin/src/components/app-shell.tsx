@@ -8,6 +8,8 @@ const navigation = [
   ["Overview", "/admin"], ["Pricing", "/admin/pricing"], ["Recommendations", "/admin/pricing/recommendations"],
   ["Demand", "/admin/demand"], ["Inventory", "/admin/inventory"], ["Inventory forecast", "/admin/inventory/forecast"],
   ["Replenishment", "/admin/replenishment"], ["Promotions", "/admin/promotions"], ["Approvals", "/admin/approvals"], ["Audit", "/admin/audit"],
+  ["Suppliers", "/admin/procurement/suppliers"], ["Sourcing", "/admin/procurement/sourcing"], ["RFQs", "/admin/procurement/rfqs"], ["Purchase orders", "/admin/procurement/purchase-orders"],
+  ["Inbound", "/admin/warehouse/inbound"], ["Receiving", "/admin/warehouse/receipts"], ["Transfers", "/admin/warehouse/transfers"], ["Warehouse tasks", "/admin/warehouse/tasks"], ["Cycle counts", "/admin/warehouse/cycle-counts"], ["Stock states", "/admin/warehouse/balances"], ["Supplier invoices", "/admin/procurement/invoices"],
 ] as const;
 
 export function AppShell({ children, userName, csrfToken }: { children: React.ReactNode; userName: string; csrfToken: string }) {

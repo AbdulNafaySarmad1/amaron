@@ -20,7 +20,7 @@ docs/adr/                     durable architectural decisions
 
 ## Module boundaries
 
-Catalog owns products, categories, variants, and assets. Operations owns governed price history, demand observations and forecasts, warehouse stock and ledger movements, replenishment proposals, promotions, alerts, and operational audit. Search is a catalog read capability backed by PostgreSQL. Storefront composes route-specific read models without owning transactional data. Cart owns shopper intent and never owns price truth. Checkout orchestrates a PostgreSQL transaction across cart, materialized price, aggregate and warehouse inventory, idempotency, and order creation. Orders own immutable purchase snapshots. Authentication validates OIDC access tokens and maps `(issuer, sub)` to an internal `ApplicationUser`; development mode can use explicit header identity.
+Catalog owns products, categories, variants, and assets. Operations owns governed price history, demand observations and forecasts, warehouse stock and ledger movements, replenishment proposals, promotions, alerts, and operational audit. Supply chain owns supplier organizations and source terms, RFQs and quotations, purchase orders, ASNs, fiscal invoices, physical receipts, lot balances, document matching, warehouse tasks, and blind cycle counts. Search is a catalog read capability backed by PostgreSQL. Storefront composes route-specific read models without owning transactional data. Cart owns shopper intent and never owns price truth. Checkout orchestrates a PostgreSQL transaction across cart, materialized price, aggregate and warehouse inventory, idempotency, and order creation. Orders own immutable purchase snapshots. Authentication validates OIDC access tokens and maps `(issuer, sub)` to an internal `ApplicationUser`; development mode can use explicit header identity.
 
 These are logical capabilities inside a layered monolith, not independently enforced modules. Application services share the `ICommerceDbContext` EF abstraction and domain entities. `Commerce.Application` depends on Domain and Contracts; Infrastructure implements persistence/cache abstractions; API is the composition root. Split ports or services only when measured ownership or scaling needs justify the added coordination.
 
@@ -30,7 +30,7 @@ Administrative product and inventory writes use strong resource versions through
 
 The API validates JWTs locally from configured OIDC metadata/JWKS; Keycloak is not called per request. Issuer, audience, signature, lifetime, token type, and `sub` are validated. Unknown signing keys trigger metadata refresh, supporting rotation while the provider is reachable and old keys remain published through outstanding-token expiry.
 
-Keycloak client roles are normalized into application permissions. Admin routes require `Administration.Access` plus a resource policy. Operations policies separately cover operations, pricing read/manage/approve, demand read/manage, inventory read/manage, replenishment read/manage, promotions read/manage, and operational audit. Only policies attached to endpoints are active controls; defining a policy does not create an endpoint.
+Keycloak client roles are normalized into application permissions. Admin routes require `Administration.Access` plus a resource policy. Operations policies separately cover operations, pricing, demand, inventory, replenishment, promotions, suppliers, procurement, receiving, invoice matching, and audit. Supplier portal routes require `Supplier.Portal`, then application queries restrict purchase orders, ASNs, and invoices to the single active `supplier_users` membership. Only policies attached to endpoints are active controls; defining a policy does not create an endpoint.
 
 The identity provider controls authentication and coarse assignment. ASP.NET policies control capability entry, and application queries control object/business authorization. Order reads default to the current internal user; `Orders.ReadAny` passes an explicit flag that broadens the query. This keeps ownership checks at the data boundary and returns not found for unauthorized object lookup. Keycloak Authorization Services is not used. No service identity exists today; add one only for a concrete non-user caller.
 
@@ -49,7 +49,12 @@ checkout -> idempotency lookup -> DB transaction -> lock cart -> reload cart ite
          -> clear cart -> persist idempotency result -> commit -> invalidate tags
 
 price activator -> advisory transaction lock -> apply/expire approved schedules
-                -> precedence resolution -> materialize variant price -> invalidate tags
+                 -> precedence resolution -> materialize variant price -> invalidate tags
+
+receipt -> idempotency advisory lock -> purchase-order row lock -> inventory row locks
+        -> validate physical = accepted + damaged + quarantined
+        -> disposition balances + immutable ledger -> accepted-only checkout aggregate
+        -> purchase-order receipt state -> commit
 ```
 
 Cancellation tokens flow from `HttpContext.RequestAborted` through services, EF, and cache. Storefront GET requests are safe and write no analytics or reservation state.

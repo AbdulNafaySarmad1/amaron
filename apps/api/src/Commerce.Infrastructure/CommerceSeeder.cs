@@ -37,15 +37,19 @@ public static class CommerceSeeder
             db.PricingPolicies.Add(new PricingPolicy { Id = Id(9001), Currency = "USD", MinimumGrossMarginPercent = 10, MaximumChangePercent = 25, MaximumMarkdownPercent = 40, ApprovalThresholdPercent = 10, EnforceCostFloor = true, IsActive = true, UpdatedBy = "seed", UpdatedAt = seedTime });
 
         var variants = await db.ProductVariants.Include(x => x.Inventory).ToListAsync(cancellationToken);
-        var stocked = await db.WarehouseStocks.Select(x => x.VariantId).ToListAsync(cancellationToken);
+        var warehouseStocks = await db.WarehouseStocks.Where(x => x.WarehouseId == warehouseId).ToDictionaryAsync(x => x.VariantId, cancellationToken);
+        var balanced = await db.InventoryBalances.Where(x => x.WarehouseId == warehouseId && x.State == InventoryState.Available).Select(x => x.VariantId).Distinct().ToListAsync(cancellationToken);
         var priced = await db.PriceRecords.Select(x => x.VariantId).ToListAsync(cancellationToken);
         foreach (var variant in variants)
         {
-            if (!stocked.Contains(variant.Id))
+            if (!warehouseStocks.TryGetValue(variant.Id, out var stock))
             {
-                db.WarehouseStocks.Add(new WarehouseStock { WarehouseId = warehouseId, VariantId = variant.Id, OnHand = variant.Inventory.QuantityOnHand, SafetyStock = 2, SupplierLeadTimeDays = 7, UpdatedAt = seedTime });
+                stock = new WarehouseStock { WarehouseId = warehouseId, VariantId = variant.Id, OnHand = variant.Inventory.QuantityOnHand, SafetyStock = 2, SupplierLeadTimeDays = 7, UpdatedAt = seedTime };
+                db.WarehouseStocks.Add(stock);
                 db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = warehouseId, QuantityDelta = variant.Inventory.QuantityOnHand, Reason = InventoryMovementReason.GoodsReceived, ReferenceType = "OpeningBalance", ReferenceId = "seed", CreatedBy = "seed", CreatedAt = seedTime });
             }
+            if (!balanced.Contains(variant.Id))
+                db.InventoryBalances.Add(new InventoryBalance { Id = Guid.CreateVersion7(), WarehouseId = warehouseId, VariantId = variant.Id, State = InventoryState.Available, Quantity = stock.OnHand, UpdatedAt = seedTime });
             if (!priced.Contains(variant.Id))
                 db.PriceRecords.Add(new PriceRecord { Id = Guid.CreateVersion7(), VariantId = variant.Id, Currency = variant.Currency, Price = variant.Price, CompareAtPrice = variant.ListPrice, CostAtTime = variant.UnitCost, EffectiveFrom = seedTime, Reason = "Opening price history", CreatedBy = "seed", CreatedAt = seedTime, ApprovedBy = "seed", ApprovedAt = seedTime, Source = "Seed", Revision = 1, Kind = PriceKind.Regular, Status = OperationalStatus.Applied });
         }

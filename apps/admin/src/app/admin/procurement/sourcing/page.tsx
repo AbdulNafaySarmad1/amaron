@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ apiBase: "/api/admin/supply-chain", title: "Sourcing", eyebrow: "PROCUREMENT / TERMS", description: "Compare cost, lead time, MOQ, order multiples, and reliability without hiding trade-offs behind a score.", endpoint: "/sources", empty: "No active supplier-product sources are configured." }} />; }

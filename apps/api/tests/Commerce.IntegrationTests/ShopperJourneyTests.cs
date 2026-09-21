@@ -133,6 +133,13 @@ public sealed class ShopperJourneyTests
         Assert.Equal(0, finalCart!.TotalQuantity);
         var orders = await client.GetFromJsonAsync<IReadOnlyList<OrderDto>>("/api/orders");
         Assert.Single(orders!);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            var stock = await db.WarehouseStocks.SingleAsync(x => x.VariantId == variant.Id);
+            Assert.Equal(stock.OnHand, await db.InventoryBalances.Where(x => x.WarehouseId == stock.WarehouseId && x.VariantId == variant.Id && x.State == Commerce.Domain.InventoryState.Available).SumAsync(x => x.Quantity));
+            Assert.Equal(-2, await db.InventoryLedgerEntries.Where(x => x.ReferenceType == "Order" && x.ReferenceId == firstCheckout.Order.Id.ToString() && x.State == Commerce.Domain.InventoryState.Available).SumAsync(x => x.QuantityDelta));
+        }
     }
 
     [Fact]
@@ -242,6 +249,358 @@ public sealed class ShopperJourneyTests
             await scope.ServiceProvider.GetRequiredService<OperationsService>().ApplyDuePricesAsync("integration-test", CancellationToken.None);
             db.ChangeTracker.Clear();
             Assert.Equal(activationPrice, await db.ProductVariants.Where(x => x.Id == activationCard.DefaultVariantId).Select(x => x.Price).SingleAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Physical_receipt_posts_only_disposition_quantities_and_is_idempotent()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        Guid warehouseId;
+        Guid variantId;
+        int initialInventory;
+        int initialWarehouseStock;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            warehouseId = await db.Warehouses.Select(x => x.Id).FirstAsync();
+            variantId = await db.ProductVariants.Select(x => x.Id).FirstAsync();
+            initialInventory = await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync();
+            initialWarehouseStock = await db.WarehouseStocks.Where(x => x.WarehouseId == warehouseId && x.VariantId == variantId).Select(x => x.OnHand).SingleAsync();
+        }
+
+        using var buyer = BearerClient(factory, Token("supply-chain-buyer", ["administration-access", "suppliers-view", "suppliers-manage", "procurement-view", "procurement-manage", "invoices-manage"]));
+        using var approver = BearerClient(factory, Token("supply-chain-approver", ["administration-access", "procurement-view", "procurement-approve"]));
+        using var receiver = BearerClient(factory, Token("warehouse-receiver", ["administration-access", "receiving-view", "receiving-manage", "invoices-match"]));
+        using var counter = BearerClient(factory, Token("warehouse-counter", ["administration-access", "cycle-counts-view", "cycle-counts-manage", "cycle-counts-reconcile", "warehouse-tasks-view"]));
+        using var reconciler = BearerClient(factory, Token("warehouse-reconciler", ["administration-access", "cycle-counts-view", "cycle-counts-reconcile", "warehouse-tasks-view"]));
+        using var transferOperator = BearerClient(factory, Token("transfer-operator", ["administration-access", "stock-transfers-view", "stock-transfers-manage", "warehouse-tasks-view"]));
+
+        var supplierResponse = await buyer.PostAsJsonAsync("/api/admin/supply-chain/suppliers", new CreateSupplierRequest("SYNTH-1", "Synthetic Supplier", "US", "TAX-1"));
+        supplierResponse.EnsureSuccessStatusCode();
+        var supplier = (await supplierResponse.Content.ReadFromJsonAsync<SupplierDto>())!;
+        var sourceResponse = await buyer.PostAsJsonAsync("/api/admin/supply-chain/sources", new SupplierSourceRequest(supplier.Id, variantId, "SUP-100", "USD", 10m, 7, 1, 1, 98m));
+        sourceResponse.EnsureSuccessStatusCode();
+        var source = (await sourceResponse.Content.ReadFromJsonAsync<SupplierSourceDto>())!;
+        var orderResponse = await buyer.PostAsJsonAsync("/api/admin/supply-chain/purchase-orders", new CreatePurchaseOrderRequest(supplier.Id, warehouseId, DateTimeOffset.UtcNow.AddDays(7), [new PurchaseOrderLineRequest(source.Id, 100)]));
+        orderResponse.EnsureSuccessStatusCode();
+        var order = (await orderResponse.Content.ReadFromJsonAsync<PurchaseOrderDto>())!;
+        Assert.Equal("Draft", order.Status);
+        Assert.Equal(HttpStatusCode.Forbidden, (await buyer.PostAsync($"/api/admin/supply-chain/purchase-orders/{order.Id}/approve", null)).StatusCode);
+        var approvalResponse = await approver.PostAsync($"/api/admin/supply-chain/purchase-orders/{order.Id}/approve", null);
+        approvalResponse.EnsureSuccessStatusCode();
+
+        InboundShipmentDto inbound;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SupplyChainService>();
+            var request = new CreateInboundShipmentRequest(order.Id, "Synthetic Carrier", "TRACK-100", DateTimeOffset.UtcNow.AddDays(7), [new CreateInboundShipmentLineRequest(order.Lines[0].Id, 100)]);
+            inbound = await service.CreateInboundShipmentAsync(request, supplier.Id, "synthetic-asn-100", "integration-supplier", CancellationToken.None);
+            var asnReplay = await service.CreateInboundShipmentAsync(request, supplier.Id, "synthetic-asn-100", "integration-supplier", CancellationToken.None);
+            Assert.True(asnReplay.IdempotencyReplayed);
+            Assert.Equal(inbound.Id, asnReplay.Id);
+        }
+
+        var invoiceRequest = new InvoiceIngestionRequest(supplier.Id, order.Id, "GENERIC", "INV-SYNTH-100", "USD", 1000m, DateTimeOffset.UtcNow, "object://invoices/inv-synth-100.pdf", "invoice|INV-SYNTH-100|100", [new InvoiceLineRequest(order.Lines[0].Id, "SUP-100", 100, 10m)]);
+        var invoiceResponse = await buyer.PostAsJsonAsync("/api/admin/supply-chain/invoices", invoiceRequest);
+        invoiceResponse.EnsureSuccessStatusCode();
+        var invoice = (await invoiceResponse.Content.ReadFromJsonAsync<FiscalInvoiceDto>())!;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(initialInventory, await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync());
+            Assert.Equal(initialWarehouseStock, await db.WarehouseStocks.Where(x => x.WarehouseId == warehouseId && x.VariantId == variantId).Select(x => x.OnHand).SingleAsync());
+            Assert.Equal(initialWarehouseStock, await db.InventoryBalances.Where(x => x.WarehouseId == warehouseId && x.VariantId == variantId && x.State == Commerce.Domain.InventoryState.Available).SumAsync(x => x.Quantity));
+            Assert.Empty(await db.InventoryLedgerEntries.Where(x => x.ReferenceType == "FiscalInvoice" && x.ReferenceId == invoice.Id.ToString()).ToListAsync());
+        }
+
+        var receiptRequest = new PostGoodsReceiptRequest(order.Id, inbound.Id, warehouseId, [new ReceiptLineRequest(order.Lines[0].Id, 100, 97, 94, 2, 1, "LOT-SYNTH-1", DateTimeOffset.UtcNow.AddYears(1))]);
+        using var receiptMessage = new HttpRequestMessage(HttpMethod.Post, "/api/admin/supply-chain/receipts") { Content = JsonContent.Create(receiptRequest) };
+        receiptMessage.Headers.Add("Idempotency-Key", "synthetic-receipt-100-97");
+        var receiptResponse = await receiver.SendAsync(receiptMessage);
+        receiptResponse.EnsureSuccessStatusCode();
+        var receipt = (await receiptResponse.Content.ReadFromJsonAsync<GoodsReceiptDto>())!;
+        var receiptLine = Assert.Single(receipt.Lines);
+        Assert.Equal(3, receiptLine.MissingQuantity);
+        Assert.Equal(94, receiptLine.AcceptedQuantity);
+        Assert.Equal(2, receiptLine.DamagedQuantity);
+        Assert.Equal(1, receiptLine.QuarantinedQuantity);
+
+        using var replayMessage = new HttpRequestMessage(HttpMethod.Post, "/api/admin/supply-chain/receipts") { Content = JsonContent.Create(receiptRequest) };
+        replayMessage.Headers.Add("Idempotency-Key", "synthetic-receipt-100-97");
+        var replayResponse = await receiver.SendAsync(replayMessage);
+        replayResponse.EnsureSuccessStatusCode();
+        Assert.True((await replayResponse.Content.ReadFromJsonAsync<GoodsReceiptDto>())!.IdempotencyReplayed);
+        var changedReceipt = receiptRequest with { Lines = [receiptRequest.Lines[0] with { AcceptedQuantity = 93, QuarantinedQuantity = 2 }] };
+        using var changedReplayMessage = new HttpRequestMessage(HttpMethod.Post, "/api/admin/supply-chain/receipts") { Content = JsonContent.Create(changedReceipt) };
+        changedReplayMessage.Headers.Add("Idempotency-Key", "synthetic-receipt-100-97");
+        Assert.Equal(HttpStatusCode.Conflict, (await receiver.SendAsync(changedReplayMessage)).StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(initialInventory + 94, await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync());
+            Assert.Equal(initialWarehouseStock + 94, await db.WarehouseStocks.Where(x => x.WarehouseId == warehouseId && x.VariantId == variantId).Select(x => x.OnHand).SingleAsync());
+            var ledger = await db.InventoryLedgerEntries.Where(x => x.ReferenceType == "GoodsReceipt" && x.ReferenceId == receipt.Id.ToString()).OrderBy(x => x.State).ToListAsync();
+            Assert.Equal(3, ledger.Count);
+            Assert.Contains(ledger, x => x.State == Commerce.Domain.InventoryState.Available && x.QuantityDelta == 94);
+            Assert.Contains(ledger, x => x.State == Commerce.Domain.InventoryState.Damaged && x.QuantityDelta == 2);
+            Assert.Contains(ledger, x => x.State == Commerce.Domain.InventoryState.Quarantined && x.QuantityDelta == 1);
+            Assert.DoesNotContain(ledger, x => x.QuantityDelta == 100);
+            var balances = await db.InventoryBalances.Where(x => x.WarehouseId == warehouseId && x.VariantId == variantId).ToListAsync();
+            Assert.Contains(balances, x => x.State == Commerce.Domain.InventoryState.Available && x.Quantity == 94);
+            Assert.Contains(balances, x => x.State == Commerce.Domain.InventoryState.Damaged && x.Quantity == 2);
+            Assert.Contains(balances, x => x.State == Commerce.Domain.InventoryState.Quarantined && x.Quantity == 1);
+        }
+
+        var matchResponse = await receiver.PostAsync($"/api/admin/supply-chain/invoices/{invoice.Id}/match", null);
+        matchResponse.EnsureSuccessStatusCode();
+        var match = (await matchResponse.Content.ReadFromJsonAsync<InvoiceMatchDto>())!;
+        Assert.Equal("Exception", match.Status);
+        Assert.Contains(match.Exceptions, x => x.Contains("exceeds physically received", StringComparison.Ordinal));
+
+        var acceptedInvoiceRequest = invoiceRequest with { ExternalNumber = "INV-SYNTH-97", TotalAmount = 970m, RawPayload = "invoice|INV-SYNTH-97|97", Lines = [new InvoiceLineRequest(order.Lines[0].Id, "SUP-100", 97, 10m)] };
+        var acceptedInvoiceResponse = await buyer.PostAsJsonAsync("/api/admin/supply-chain/invoices", acceptedInvoiceRequest);
+        acceptedInvoiceResponse.EnsureSuccessStatusCode();
+        var acceptedInvoice = (await acceptedInvoiceResponse.Content.ReadFromJsonAsync<FiscalInvoiceDto>())!;
+        var acceptedMatchResponse = await receiver.PostAsync($"/api/admin/supply-chain/invoices/{acceptedInvoice.Id}/match", null);
+        acceptedMatchResponse.EnsureSuccessStatusCode();
+        Assert.Equal("Matched", (await acceptedMatchResponse.Content.ReadFromJsonAsync<InvoiceMatchDto>())!.Status);
+
+        var duplicateClaimRequest = invoiceRequest with { ExternalNumber = "INV-SYNTH-EXTRA", TotalAmount = 10m, RawPayload = "invoice|INV-SYNTH-EXTRA|1", Lines = [new InvoiceLineRequest(order.Lines[0].Id, "SUP-100", 1, 10m)] };
+        var duplicateClaimResponse = await buyer.PostAsJsonAsync("/api/admin/supply-chain/invoices", duplicateClaimRequest);
+        duplicateClaimResponse.EnsureSuccessStatusCode();
+        var duplicateClaim = (await duplicateClaimResponse.Content.ReadFromJsonAsync<FiscalInvoiceDto>())!;
+        var duplicateMatchResponse = await receiver.PostAsync($"/api/admin/supply-chain/invoices/{duplicateClaim.Id}/match", null);
+        duplicateMatchResponse.EnsureSuccessStatusCode();
+        var duplicateMatch = (await duplicateMatchResponse.Content.ReadFromJsonAsync<InvoiceMatchDto>())!;
+        Assert.Equal("Exception", duplicateMatch.Status);
+        Assert.Contains(duplicateMatch.Exceptions, x => x.Contains("cumulative invoiced quantity", StringComparison.Ordinal));
+
+        var cycleCountResponse = await counter.PostAsJsonAsync("/api/admin/supply-chain/cycle-counts", new CreateCycleCountRequest(warehouseId, [new CycleCountScopeRequest(variantId, null, receiptLine.LotId, "Available")]));
+        cycleCountResponse.EnsureSuccessStatusCode();
+        var cycleCount = (await cycleCountResponse.Content.ReadFromJsonAsync<CycleCountDto>())!;
+        var cycleLine = Assert.Single(cycleCount.Lines);
+        Assert.Null(cycleLine.ExpectedQuantity);
+        var countTasks = (await counter.GetFromJsonAsync<IReadOnlyList<WarehouseTaskDto>>($"/api/admin/supply-chain/warehouse-tasks?warehouseId={warehouseId}"))!;
+        var countTask = Assert.Single(countTasks, x => x.ReferenceId == cycleLine.Id.ToString());
+        Assert.Equal(1, countTask.Quantity);
+        var startCountResponse = await counter.PostAsync($"/api/admin/supply-chain/cycle-counts/{cycleCount.Id}/start", null);
+        startCountResponse.EnsureSuccessStatusCode();
+        var submitCountResponse = await counter.PostAsJsonAsync($"/api/admin/supply-chain/cycle-counts/{cycleCount.Id}/submit", new SubmitCycleCountRequest([new SubmitCycleCountLineRequest(cycleLine.Id, 93)]));
+        submitCountResponse.EnsureSuccessStatusCode();
+        var submittedCount = (await submitCountResponse.Content.ReadFromJsonAsync<CycleCountDto>())!;
+        Assert.Equal(94, submittedCount.Lines[0].ExpectedQuantity);
+        Assert.Equal(-1, submittedCount.Lines[0].Difference);
+        Assert.Equal(HttpStatusCode.Forbidden, (await counter.PostAsync($"/api/admin/supply-chain/cycle-counts/{cycleCount.Id}/reconcile", null)).StatusCode);
+        var reconcileResponse = await reconciler.PostAsync($"/api/admin/supply-chain/cycle-counts/{cycleCount.Id}/reconcile", null);
+        reconcileResponse.EnsureSuccessStatusCode();
+        Assert.Equal("Reconciled", (await reconcileResponse.Content.ReadFromJsonAsync<CycleCountDto>())!.Status);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(initialInventory + 93, await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync());
+            Assert.Contains(await db.InventoryLedgerEntries.Where(x => x.ReferenceType == "CycleCount" && x.ReferenceId == cycleCount.Id.ToString()).ToListAsync(), x => x.State == Commerce.Domain.InventoryState.Available && x.QuantityDelta == -1);
+            Assert.All(await db.WarehouseTasks.Where(x => x.ReferenceType == "CycleCountLine" && x.ReferenceId == cycleLine.Id.ToString()).ToListAsync(), x => Assert.Equal(Commerce.Domain.WarehouseTaskStatus.Completed, x.Status));
+        }
+
+        var staleCountResponse = await counter.PostAsJsonAsync("/api/admin/supply-chain/cycle-counts", new CreateCycleCountRequest(warehouseId, [new CycleCountScopeRequest(variantId, null, receiptLine.LotId, "Available")]));
+        staleCountResponse.EnsureSuccessStatusCode();
+        var staleCount = (await staleCountResponse.Content.ReadFromJsonAsync<CycleCountDto>())!;
+        var staleLine = Assert.Single(staleCount.Lines);
+        (await counter.PostAsync($"/api/admin/supply-chain/cycle-counts/{staleCount.Id}/start", null)).EnsureSuccessStatusCode();
+        (await counter.PostAsJsonAsync($"/api/admin/supply-chain/cycle-counts/{staleCount.Id}/submit", new SubmitCycleCountRequest([new SubmitCycleCountLineRequest(staleLine.Id, 92)]))).EnsureSuccessStatusCode();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            var balance = await db.InventoryBalances.SingleAsync(x => x.WarehouseId == warehouseId && x.VariantId == variantId && x.LotId == receiptLine.LotId && x.State == Commerce.Domain.InventoryState.Available);
+            var aggregate = await db.Inventory.SingleAsync(x => x.VariantId == variantId);
+            var stock = await db.WarehouseStocks.SingleAsync(x => x.WarehouseId == warehouseId && x.VariantId == variantId);
+            balance.Quantity += 1; aggregate.QuantityOnHand += 1; stock.OnHand += 1;
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(HttpStatusCode.Conflict, (await reconciler.PostAsync($"/api/admin/supply-chain/cycle-counts/{staleCount.Id}/reconcile", null)).StatusCode);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(initialInventory + 94, await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync());
+            Assert.Empty(await db.InventoryLedgerEntries.Where(x => x.ReferenceType == "CycleCount" && x.ReferenceId == staleCount.Id.ToString()).ToListAsync());
+        }
+
+        var destinationWarehouseId = Guid.CreateVersion7();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            db.Warehouses.Add(new Commerce.Domain.Warehouse { Id = destinationWarehouseId, Code = "SYNTH-DEST", Name = "Synthetic destination", IsActive = true });
+            await db.SaveChangesAsync();
+        }
+        var transferRequest = new CreateStockTransferRequest(warehouseId, destinationWarehouseId, [new CreateStockTransferLineRequest(variantId, receiptLine.LotId, 10)]);
+        using var createTransfer = new HttpRequestMessage(HttpMethod.Post, "/api/admin/supply-chain/stock-transfers") { Content = JsonContent.Create(transferRequest) };
+        createTransfer.Headers.Add("Idempotency-Key", "synthetic-transfer-create");
+        var transferResponse = await transferOperator.SendAsync(createTransfer);
+        transferResponse.EnsureSuccessStatusCode();
+        var stockTransfer = (await transferResponse.Content.ReadFromJsonAsync<StockTransferDto>())!;
+        using (var createReplay = new HttpRequestMessage(HttpMethod.Post, "/api/admin/supply-chain/stock-transfers") { Content = JsonContent.Create(transferRequest) })
+        {
+            createReplay.Headers.Add("Idempotency-Key", "synthetic-transfer-create");
+            var createReplayResponse = await transferOperator.SendAsync(createReplay);
+            createReplayResponse.EnsureSuccessStatusCode();
+            Assert.True((await createReplayResponse.Content.ReadFromJsonAsync<StockTransferDto>())!.IdempotencyReplayed);
+        }
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(1, await db.StockTransfers.CountAsync(x => x.CreateIdempotencyKey == "synthetic-transfer-create"));
+            var task = await db.WarehouseTasks.SingleAsync(x => x.ReferenceType == "StockTransferDispatch" && x.ReferenceId == stockTransfer.Lines[0].Id.ToString());
+            Assert.Equal(10, task.Quantity);
+            Assert.Equal(receiptLine.LotId, task.LotId);
+        }
+        using (var dispatch = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/supply-chain/stock-transfers/{stockTransfer.Id}/dispatch"))
+        {
+            dispatch.Headers.Add("Idempotency-Key", "synthetic-transfer-dispatch");
+            var dispatchResponse = await transferOperator.SendAsync(dispatch);
+            dispatchResponse.EnsureSuccessStatusCode();
+            Assert.Equal("InTransit", (await dispatchResponse.Content.ReadFromJsonAsync<StockTransferDto>())!.Status);
+        }
+        using (var dispatchReplay = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/supply-chain/stock-transfers/{stockTransfer.Id}/dispatch"))
+        {
+            dispatchReplay.Headers.Add("Idempotency-Key", "synthetic-transfer-dispatch");
+            var dispatchReplayResponse = await transferOperator.SendAsync(dispatchReplay);
+            dispatchReplayResponse.EnsureSuccessStatusCode();
+            Assert.True((await dispatchReplayResponse.Content.ReadFromJsonAsync<StockTransferDto>())!.IdempotencyReplayed);
+        }
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(initialInventory + 84, await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync());
+            Assert.Equal(10, await db.InventoryBalances.Where(x => x.WarehouseId == destinationWarehouseId && x.VariantId == variantId && x.LotId == receiptLine.LotId && x.State == Commerce.Domain.InventoryState.InTransit).Select(x => x.Quantity).SingleAsync());
+        }
+        using (var receive = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/supply-chain/stock-transfers/{stockTransfer.Id}/receive"))
+        {
+            receive.Headers.Add("Idempotency-Key", "synthetic-transfer-receive");
+            var receiveResponse = await transferOperator.SendAsync(receive);
+            receiveResponse.EnsureSuccessStatusCode();
+            Assert.Equal("Received", (await receiveResponse.Content.ReadFromJsonAsync<StockTransferDto>())!.Status);
+        }
+        using (var receiveReplay = new HttpRequestMessage(HttpMethod.Post, $"/api/admin/supply-chain/stock-transfers/{stockTransfer.Id}/receive"))
+        {
+            receiveReplay.Headers.Add("Idempotency-Key", "synthetic-transfer-receive");
+            var receiveReplayResponse = await transferOperator.SendAsync(receiveReplay);
+            receiveReplayResponse.EnsureSuccessStatusCode();
+            Assert.True((await receiveReplayResponse.Content.ReadFromJsonAsync<StockTransferDto>())!.IdempotencyReplayed);
+        }
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            Assert.Equal(initialInventory + 94, await db.Inventory.Where(x => x.VariantId == variantId).Select(x => x.QuantityOnHand).SingleAsync());
+            Assert.Equal(10, await db.WarehouseStocks.Where(x => x.WarehouseId == destinationWarehouseId && x.VariantId == variantId).Select(x => x.OnHand).SingleAsync());
+            Assert.Equal(0, await db.InventoryBalances.Where(x => x.WarehouseId == destinationWarehouseId && x.VariantId == variantId && x.LotId == receiptLine.LotId && x.State == Commerce.Domain.InventoryState.InTransit).Select(x => x.Quantity).SingleAsync());
+            Assert.Equal(10, await db.InventoryBalances.Where(x => x.WarehouseId == destinationWarehouseId && x.VariantId == variantId && x.LotId == receiptLine.LotId && x.State == Commerce.Domain.InventoryState.Available).Select(x => x.Quantity).SingleAsync());
+            var tasks = await db.WarehouseTasks.Where(x => x.ReferenceId == stockTransfer.Lines[0].Id.ToString()).ToListAsync();
+            Assert.Equal(2, tasks.Count);
+            Assert.All(tasks, x => { Assert.Equal(Commerce.Domain.WarehouseTaskStatus.Completed, x.Status); Assert.Equal(10, x.CompletedQuantity); });
+            var transferLedger = await db.InventoryLedgerEntries.Where(x => x.ReferenceType == "StockTransfer" && x.ReferenceId == stockTransfer.Id.ToString()).ToListAsync();
+            Assert.Equal(4, transferLedger.Count);
+            Assert.Contains(transferLedger, x => x.WarehouseId == warehouseId && x.State == Commerce.Domain.InventoryState.Available && x.QuantityDelta == -10);
+            Assert.Contains(transferLedger, x => x.WarehouseId == destinationWarehouseId && x.State == Commerce.Domain.InventoryState.InTransit && x.QuantityDelta == 10);
+            Assert.Contains(transferLedger, x => x.WarehouseId == destinationWarehouseId && x.State == Commerce.Domain.InventoryState.InTransit && x.QuantityDelta == -10);
+            Assert.Contains(transferLedger, x => x.WarehouseId == destinationWarehouseId && x.State == Commerce.Domain.InventoryState.Available && x.QuantityDelta == 10);
+        }
+    }
+
+    [Fact]
+    public async Task Supplier_portal_queries_and_commands_are_scoped_by_persisted_membership()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        SupplierDto supplierA;
+        SupplierDto supplierB;
+        PurchaseOrderDto orderA;
+        PurchaseOrderDto orderB;
+        RfqDto rfq;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            var service = scope.ServiceProvider.GetRequiredService<SupplyChainService>();
+            var warehouseId = await db.Warehouses.Select(x => x.Id).FirstAsync();
+            var variantId = await db.ProductVariants.Select(x => x.Id).FirstAsync();
+            supplierA = await service.CreateSupplierAsync(new("TENANT-A", "Tenant A Supplier", "US", null), "setup", CancellationToken.None);
+            supplierB = await service.CreateSupplierAsync(new("TENANT-B", "Tenant B Supplier", "US", null), "setup", CancellationToken.None);
+            var sourceA = await service.CreateSourceAsync(new(supplierA.Id, variantId, "A-SKU", "USD", 5m, 3, 1, 1, 95m), "setup", CancellationToken.None);
+            var sourceB = await service.CreateSourceAsync(new(supplierB.Id, variantId, "B-SKU", "USD", 5m, 3, 1, 1, 95m), "setup", CancellationToken.None);
+            orderA = await service.CreatePurchaseOrderAsync(new(supplierA.Id, warehouseId, DateTimeOffset.UtcNow.AddDays(3), [new(sourceA.Id, 10)]), "buyer", CancellationToken.None);
+            orderB = await service.CreatePurchaseOrderAsync(new(supplierB.Id, warehouseId, DateTimeOffset.UtcNow.AddDays(3), [new(sourceB.Id, 10)]), "buyer", CancellationToken.None);
+            orderA = await service.ApprovePurchaseOrderAsync(orderA.Id, "approver", CancellationToken.None);
+            orderB = await service.ApprovePurchaseOrderAsync(orderB.Id, "approver", CancellationToken.None);
+            var userA = new Commerce.Domain.ApplicationUser { Id = Guid.CreateVersion7(), IdentityIssuer = TestIssuer, ExternalSubject = "supplier-tenant-a", CreatedAt = DateTimeOffset.UtcNow };
+            var userB = new Commerce.Domain.ApplicationUser { Id = Guid.CreateVersion7(), IdentityIssuer = TestIssuer, ExternalSubject = "supplier-tenant-b", CreatedAt = DateTimeOffset.UtcNow };
+            db.ApplicationUsers.AddRange(userA, userB);
+            db.SupplierUsers.AddRange(
+                new Commerce.Domain.SupplierUser { SupplierOrganizationId = supplierA.Id, ApplicationUserId = userA.Id, CreatedAt = DateTimeOffset.UtcNow },
+                new Commerce.Domain.SupplierUser { SupplierOrganizationId = supplierB.Id, ApplicationUserId = userB.Id, CreatedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync();
+            rfq = await service.CreateRfqAsync(new CreateRfqRequest(warehouseId, "USD", DateTimeOffset.UtcNow.AddDays(2), [supplierA.Id, supplierB.Id], [new CreateRfqLineRequest(variantId, 10)]), "buyer", CancellationToken.None);
+            rfq = await service.OpenRfqAsync(rfq.Id, "buyer", CancellationToken.None);
+        }
+
+        using var portalA = BearerClient(factory, Token("supplier-tenant-a", ["supplier-portal"]));
+        using var portalB = BearerClient(factory, Token("supplier-tenant-b", ["supplier-portal"]));
+        var visibleA = (await portalA.GetFromJsonAsync<IReadOnlyList<PurchaseOrderDto>>("/api/supplier/purchase-orders"))!;
+        Assert.Single(visibleA);
+        Assert.Equal(orderA.Id, visibleA[0].Id);
+        var crossTenantAsn = new CreateInboundShipmentRequest(orderB.Id, null, null, null, [new CreateInboundShipmentLineRequest(orderB.Lines[0].Id, 10)]);
+        using (var message = new HttpRequestMessage(HttpMethod.Post, "/api/supplier/shipments") { Content = JsonContent.Create(crossTenantAsn) })
+        {
+            message.Headers.Add("Idempotency-Key", "cross-tenant-asn");
+            Assert.Equal(HttpStatusCode.NotFound, (await portalA.SendAsync(message)).StatusCode);
+        }
+
+        const string sharedPayload = "invoice|SHARED-100|10";
+        var invoiceA = new InvoiceIngestionRequest(supplierA.Id, orderA.Id, "GENERIC", "SHARED-100", "USD", 50m, DateTimeOffset.UtcNow, null, sharedPayload, [new InvoiceLineRequest(orderA.Lines[0].Id, "A-SKU", 10, 5m)]);
+        var invoiceB = new InvoiceIngestionRequest(supplierB.Id, orderB.Id, "GENERIC", "SHARED-100", "USD", 50m, DateTimeOffset.UtcNow, null, sharedPayload, [new InvoiceLineRequest(orderB.Lines[0].Id, "B-SKU", 10, 5m)]);
+        Assert.Equal(HttpStatusCode.BadRequest, (await portalA.PostAsJsonAsync("/api/supplier/invoices", invoiceB)).StatusCode);
+        var responseA = await portalA.PostAsJsonAsync("/api/supplier/invoices", invoiceA);
+        var responseB = await portalB.PostAsJsonAsync("/api/supplier/invoices", invoiceB);
+        responseA.EnsureSuccessStatusCode();
+        responseB.EnsureSuccessStatusCode();
+        var createdA = (await responseA.Content.ReadFromJsonAsync<FiscalInvoiceDto>())!;
+        Assert.NotEqual(createdA.Id, (await responseB.Content.ReadFromJsonAsync<FiscalInvoiceDto>())!.Id);
+        var replayA = await portalA.PostAsJsonAsync("/api/supplier/invoices", invoiceA);
+        replayA.EnsureSuccessStatusCode();
+        Assert.Equal(createdA.Id, (await replayA.Content.ReadFromJsonAsync<FiscalInvoiceDto>())!.Id);
+        Assert.Equal(HttpStatusCode.Conflict, (await portalA.PostAsJsonAsync("/api/supplier/invoices", invoiceA with { TotalAmount = 55m })).StatusCode);
+
+        var visibleRfqsA = (await portalA.GetFromJsonAsync<IReadOnlyList<RfqDto>>("/api/supplier/rfqs"))!;
+        var supplierView = Assert.Single(visibleRfqsA, x => x.Id == rfq.Id);
+        Assert.Equal([supplierA.Id], supplierView.SupplierOrganizationIds);
+        Assert.Empty(supplierView.CreatedBy);
+        var quotationAResponse = await portalA.PostAsJsonAsync($"/api/supplier/rfqs/{rfq.Id}/quotations", new SubmitQuotationRequest("USD", [new SubmitQuotationLineRequest(rfq.Lines[0].Id, "A-SKU", 4m, 10, 1, 1, 92m)]));
+        var quotationBResponse = await portalB.PostAsJsonAsync($"/api/supplier/rfqs/{rfq.Id}/quotations", new SubmitQuotationRequest("USD", [new SubmitQuotationLineRequest(rfq.Lines[0].Id, "B-SKU", 5m, 2, 1, 1, 99m)]));
+        quotationAResponse.EnsureSuccessStatusCode();
+        quotationBResponse.EnsureSuccessStatusCode();
+        var quotationA = (await quotationAResponse.Content.ReadFromJsonAsync<SupplierQuotationDto>())!;
+        var quotationB = (await quotationBResponse.Content.ReadFromJsonAsync<SupplierQuotationDto>())!;
+        Assert.True(quotationA.Total.Amount < quotationB.Total.Amount);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SupplyChainService>();
+            var selfAward = await Assert.ThrowsAsync<CommerceException>(() => service.AwardQuotationAsync(rfq.Id, new(quotationB.Id, "Faster delivery is required."), "buyer", CancellationToken.None));
+            Assert.Equal(403, selfAward.StatusCode);
+            var award = await service.AwardQuotationAsync(rfq.Id, new(quotationB.Id, "Faster delivery is required."), "independent-approver", CancellationToken.None);
+            Assert.Equal(supplierB.Id, award.DraftPurchaseOrder.SupplierOrganizationId);
+            Assert.Equal(quotationB.Id, award.DraftPurchaseOrder.SourceQuotationId);
+            Assert.Equal("Draft", award.DraftPurchaseOrder.Status);
+            Assert.Equal(5m, award.DraftPurchaseOrder.Lines[0].UnitCost.Amount);
+            Assert.NotNull(award.DraftPurchaseOrder.Lines[0].SourceQuotationLineId);
+            Assert.Equal(2, award.DraftPurchaseOrder.Lines[0].LeadTimeDays);
+            Assert.Equal(1, award.DraftPurchaseOrder.Lines[0].MinimumOrderQuantity);
+            Assert.Equal(1, award.DraftPurchaseOrder.Lines[0].OrderMultiple);
+            Assert.Equal(99m, award.DraftPurchaseOrder.Lines[0].ReliabilityPercent);
+            Assert.Equal("Awarded", award.Quotation.Status);
+            Assert.Equal("Rejected", (await service.GetQuotationsAsync(rfq.Id, CancellationToken.None)).Single(x => x.Id == quotationA.Id).Status);
         }
     }
 

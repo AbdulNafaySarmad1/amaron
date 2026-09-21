@@ -61,7 +61,7 @@ const rules: readonly Rule[] = [
   { methods: ["GET"], pattern: /^\/demand$/ },
   { methods: ["POST"], pattern: /^\/forecasts\/generate$/ },
   { methods: ["GET"], pattern: /^\/inventory$/ },
-  { methods: ["POST"], pattern: /^\/inventory\/(adjustments|transfers)$/ },
+  { methods: ["POST"], pattern: /^\/inventory\/adjustments$/ },
   { methods: ["GET"], pattern: /^\/replenishment$/ },
   { methods: ["POST"], pattern: /^\/replenishment\/generate$/ },
   { methods: ["POST"], pattern: /^\/replenishment\/[^/]+\/approve$/ },
@@ -76,4 +76,29 @@ const rules: readonly Rule[] = [
 
 export function isAllowedOperation(method: string, path: string) {
   return rules.some((rule) => rule.methods.includes(method.toUpperCase()) && rule.pattern.test(path));
+}
+
+const supplyChainRules: readonly Rule[] = [
+  { methods: ["GET", "POST"], pattern: /^\/suppliers$/ },
+  { methods: ["POST"], pattern: /^\/suppliers\/[^/]+\/users$/ },
+  { methods: ["GET", "POST"], pattern: /^\/sources$/ },
+  { methods: ["GET", "POST"], pattern: /^\/rfqs$/ },
+  { methods: ["POST"], pattern: /^\/rfqs\/[^/]+\/(open|close|award)$/ },
+  { methods: ["GET"], pattern: /^\/rfqs\/[^/]+\/quotations$/ },
+  { methods: ["GET", "POST"], pattern: /^\/purchase-orders$/ },
+  { methods: ["POST"], pattern: /^\/purchase-orders\/[^/]+\/approve$/ },
+  { methods: ["GET"], pattern: /^\/shipments$/ },
+  { methods: ["GET", "POST"], pattern: /^\/invoices$/ },
+  { methods: ["POST"], pattern: /^\/invoices\/[^/]+\/match$/ },
+  { methods: ["GET", "POST"], pattern: /^\/receipts$/ },
+  { methods: ["GET"], pattern: /^\/inventory-balances$/ },
+  { methods: ["GET"], pattern: /^\/warehouse-tasks$/ },
+  { methods: ["GET", "POST"], pattern: /^\/cycle-counts$/ },
+  { methods: ["POST"], pattern: /^\/cycle-counts\/[^/]+\/(start|submit|reconcile)$/ },
+  { methods: ["GET", "POST"], pattern: /^\/stock-transfers$/ },
+  { methods: ["POST"], pattern: /^\/stock-transfers\/[^/]+\/(dispatch|receive)$/ },
+];
+
+export function isAllowedSupplyChainOperation(method: string, path: string) {
+  return supplyChainRules.some((rule) => rule.methods.includes(method.toUpperCase()) && rule.pattern.test(path));
 }

@@ -81,7 +81,25 @@
         {"name": "replenishment-manage", "description": "Generate and approve replenishment recommendations"},
         {"name": "promotions-view", "description": "Read promotions"},
         {"name": "promotions-manage", "description": "Propose and approve promotions"},
-        {"name": "operations-audit", "description": "Read the operational audit trail"}
+        {"name": "operations-audit", "description": "Read the operational audit trail"},
+        {"name": "suppliers-view", "description": "Read supplier master data"},
+        {"name": "suppliers-manage", "description": "Manage supplier master data and memberships"},
+        {"name": "procurement-view", "description": "Read sourcing terms and purchase orders"},
+        {"name": "procurement-manage", "description": "Create sourcing terms and purchase orders"},
+        {"name": "procurement-approve", "description": "Approve purchase orders independently"},
+        {"name": "receiving-view", "description": "Read receipts and inventory balances"},
+        {"name": "receiving-manage", "description": "Post physical warehouse receipts"},
+        {"name": "invoices-view", "description": "Read supplier invoices"},
+        {"name": "invoices-manage", "description": "Ingest supplier invoices"},
+        {"name": "invoices-match", "description": "Run invoice matching"},
+        {"name": "supplier-portal", "description": "Use supplier-scoped portal APIs"},
+        {"name": "warehouse-tasks-view", "description": "Read warehouse execution tasks"},
+        {"name": "warehouse-tasks-manage", "description": "Assign and execute warehouse tasks"},
+        {"name": "cycle-counts-view", "description": "Read cycle count plans and results"},
+        {"name": "cycle-counts-manage", "description": "Plan and submit blind cycle counts"},
+        {"name": "cycle-counts-reconcile", "description": "Independently reconcile cycle count differences"},
+        {"name": "stock-transfers-view", "description": "Read warehouse stock transfers"},
+        {"name": "stock-transfers-manage", "description": "Create, dispatch, and receive stock transfers"}
       ],
       "admin-web": [
         {"name": "support-access", "description": "Sign in to support administration"},
@@ -226,7 +244,7 @@
     "commerce-api": [
       {
         "client": "admin-web",
-        "roles": ["support-agent", "catalog-view", "catalog-manage", "inventory-view", "inventory-manage", "orders-view-any", "orders-manage", "reviews-moderate", "security-auditor", "security-admin", "administration-access", "operations-view", "pricing-view", "pricing-manage", "pricing-approve", "demand-view", "demand-manage", "replenishment-view", "replenishment-manage", "promotions-view", "promotions-manage", "operations-audit"]
+        "roles": ["support-agent", "catalog-view", "catalog-manage", "inventory-view", "inventory-manage", "orders-view-any", "orders-manage", "reviews-moderate", "security-auditor", "security-admin", "administration-access", "operations-view", "pricing-view", "pricing-manage", "pricing-approve", "demand-view", "demand-manage", "replenishment-view", "replenishment-manage", "promotions-view", "promotions-manage", "operations-audit", "suppliers-view", "suppliers-manage", "procurement-view", "procurement-manage", "procurement-approve", "receiving-view", "receiving-manage", "invoices-view", "invoices-manage", "invoices-match", "warehouse-tasks-view", "warehouse-tasks-manage", "cycle-counts-view", "cycle-counts-manage", "cycle-counts-reconcile", "stock-transfers-view", "stock-transfers-manage"]
       }
     ],
     "admin-web": [
@@ -263,7 +281,19 @@
         {
           "name": "Inventory Team",
           "clientRoles": {
-            "commerce-api": ["inventory-view", "inventory-manage", "administration-access", "operations-view", "replenishment-view", "replenishment-manage"]
+            "commerce-api": ["inventory-view", "inventory-manage", "administration-access", "operations-view", "replenishment-view", "replenishment-manage", "receiving-view", "receiving-manage", "warehouse-tasks-view", "warehouse-tasks-manage", "cycle-counts-view", "cycle-counts-manage", "stock-transfers-view", "stock-transfers-manage"]
+          }
+        },
+        {
+          "name": "Inventory Control",
+          "clientRoles": {
+            "commerce-api": ["inventory-view", "administration-access", "operations-view", "warehouse-tasks-view", "cycle-counts-view", "cycle-counts-reconcile", "operations-audit"]
+          }
+        },
+        {
+          "name": "Procurement Team",
+          "clientRoles": {
+            "commerce-api": ["administration-access", "operations-view", "suppliers-view", "suppliers-manage", "procurement-view", "procurement-manage", "procurement-approve", "invoices-view", "invoices-manage", "invoices-match"]
           }
         }
       ]

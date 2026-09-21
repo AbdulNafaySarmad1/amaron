@@ -43,8 +43,21 @@ public sealed class AdminCatalogService(ICommerceDbContext db, IReadModelCache c
         if (stock is not null)
         {
             if (stock.OnHand + delta < stock.Reserved + stock.Unavailable) throw CommerceErrors.Conflict("insufficient_inventory", "The correction would reduce stock below reserved or unavailable units.");
+            var now = clock.GetUtcNow();
+            IReadOnlyList<(InventoryBalance Balance, int Quantity)> consumed = [];
+            if (delta < 0)
+                consumed = await InventoryBalanceOperations.ConsumeAvailableAsync(db, stock, -delta, now, cancellationToken);
+            else
+            {
+                var balance = await InventoryBalanceOperations.EnsureUnscopedAvailableAsync(db, stock, now, cancellationToken);
+                balance.Quantity += delta; balance.UpdatedAt = now;
+            }
             stock.OnHand += delta; stock.UpdatedAt = clock.GetUtcNow();
-            db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variantId, WarehouseId = stock.WarehouseId, LocationId = stock.LocationId, QuantityDelta = delta, Reason = InventoryMovementReason.Correction, ReferenceType = "LegacyAdminInventory", ReferenceId = variantId.ToString(), CreatedBy = actor, CreatedAt = clock.GetUtcNow() });
+            if (delta > 0)
+                db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variantId, WarehouseId = stock.WarehouseId, LocationId = stock.LocationId, State = InventoryState.Available, QuantityDelta = delta, Reason = InventoryMovementReason.Correction, ReferenceType = "LegacyAdminInventory", ReferenceId = variantId.ToString(), CreatedBy = actor, CreatedAt = now });
+            else
+                foreach (var allocation in consumed)
+                    db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variantId, WarehouseId = stock.WarehouseId, LocationId = allocation.Balance.LocationId, LotId = allocation.Balance.LotId, State = InventoryState.Available, QuantityDelta = -allocation.Quantity, Reason = InventoryMovementReason.Correction, ReferenceType = "LegacyAdminInventory", ReferenceId = variantId.ToString(), CreatedBy = actor, CreatedAt = now });
         }
         db.OperationsAuditEntries.Add(new OperationsAuditEntry { Id = Guid.CreateVersion7(), EventType = "INVENTORY_CORRECTED", ResourceType = "InventoryItem", ResourceId = variantId.ToString(), ActorId = actor, BeforeJson = System.Text.Json.JsonSerializer.Serialize(new { inventory.QuantityOnHand }), AfterJson = System.Text.Json.JsonSerializer.Serialize(new { request.QuantityOnHand }), Reason = "Legacy inventory correction endpoint", CreatedAt = clock.GetUtcNow() });
         inventory.QuantityOnHand = request.QuantityOnHand;

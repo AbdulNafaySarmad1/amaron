@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ apiBase: "/api/admin/supply-chain", title: "Inventory states", eyebrow: "WAREHOUSE / CONTROL", description: "Authoritative operational balances by warehouse, variant, lot, and disposition.", endpoint: "/inventory-balances", empty: "No state-specific balances are available.", chart: { label: "State quantities", fields: ["quantity"] } }} />; }

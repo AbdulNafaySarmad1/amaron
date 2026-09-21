@@ -36,17 +36,53 @@ public interface ICommerceDbContext
     DbSet<ReplenishmentRecommendation> ReplenishmentRecommendations { get; }
     DbSet<OperationalAlert> OperationalAlerts { get; }
     DbSet<OperationsAuditEntry> OperationsAuditEntries { get; }
+    DbSet<SupplierOrganization> SupplierOrganizations { get; }
+    DbSet<SupplierUser> SupplierUsers { get; }
+    DbSet<SupplierProductSource> SupplierProductSources { get; }
+    DbSet<PurchaseOrder> PurchaseOrders { get; }
+    DbSet<PurchaseOrderLine> PurchaseOrderLines { get; }
+    DbSet<InboundShipment> InboundShipments { get; }
+    DbSet<InboundShipmentLine> InboundShipmentLines { get; }
+    DbSet<FiscalInvoice> FiscalInvoices { get; }
+    DbSet<FiscalInvoiceLine> FiscalInvoiceLines { get; }
+    DbSet<InventoryLot> InventoryLots { get; }
+    DbSet<InventoryBalance> InventoryBalances { get; }
+    DbSet<GoodsReceipt> GoodsReceipts { get; }
+    DbSet<GoodsReceiptLine> GoodsReceiptLines { get; }
+    DbSet<InvoiceMatch> InvoiceMatches { get; }
+    DbSet<RequestForQuotation> RequestsForQuotation { get; }
+    DbSet<RequestForQuotationLine> RequestForQuotationLines { get; }
+    DbSet<RequestForQuotationSupplier> RequestForQuotationSuppliers { get; }
+    DbSet<SupplierQuotation> SupplierQuotations { get; }
+    DbSet<SupplierQuotationLine> SupplierQuotationLines { get; }
+    DbSet<WarehouseTask> WarehouseTasks { get; }
+    DbSet<CycleCount> CycleCounts { get; }
+    DbSet<CycleCountLine> CycleCountLines { get; }
+    DbSet<StockTransfer> StockTransfers { get; }
+    DbSet<StockTransferLine> StockTransferLines { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
     Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
     Task LockCartAsync(Guid cartId, CancellationToken cancellationToken);
     Task LockInventoryAsync(IReadOnlyCollection<Guid> variantIds, CancellationToken cancellationToken);
     Task LockPriceActivationAsync(CancellationToken cancellationToken);
+    Task LockPurchaseOrderAsync(Guid purchaseOrderId, CancellationToken cancellationToken);
+    Task LockReceiptIdempotencyAsync(string key, CancellationToken cancellationToken);
+    Task LockRequestForQuotationAsync(Guid rfqId, CancellationToken cancellationToken);
+    Task LockCycleCountAsync(Guid cycleCountId, CancellationToken cancellationToken);
+    Task LockStockTransferAsync(Guid stockTransferId, CancellationToken cancellationToken);
+    Task LockStockTransferIdempotencyAsync(string key, CancellationToken cancellationToken);
 }
 
 public interface IReadModelCache
 {
     Task<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, TimeSpan expiration, IReadOnlyCollection<string> tags, CancellationToken cancellationToken);
     Task RemoveByTagAsync(string tag, CancellationToken cancellationToken);
+}
+
+public interface IInvoiceResolver
+{
+    bool Supports(string provider);
+    void ValidatePayload(string payload);
 }
 
 public sealed class CommerceException(string code, string message, int statusCode) : Exception(message)

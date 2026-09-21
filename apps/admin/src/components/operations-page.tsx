@@ -7,6 +7,7 @@ import { useSession } from "./session-context";
 
 export type PageConfig = {
   title: string; eyebrow: string; description: string; endpoint: string; empty: string;
+  apiBase?: "/api/admin/operations" | "/api/admin/supply-chain";
   chart?: { label: string; fields: string[] };
   approve?: { path: string; label: string };
   action?: { path: string; label: string; selectedField?: string; body?: Row };
@@ -41,7 +42,7 @@ export function OperationsPage({ config }: { config: PageConfig }) {
     setLoading(true); setError("");
     try {
       const params = new URLSearchParams({ query: filter, page: String(page), pageSize: String(pageSize) });
-      const response = await fetch(`/api/admin/operations${config.endpoint}?${params}`, { cache: "no-store", signal });
+      const response = await fetch(`${config.apiBase ?? "/api/admin/operations"}${config.endpoint}?${params}`, { cache: "no-store", signal });
       if (response.status === 401) { router.push(`/auth/login?returnTo=${encodeURIComponent(location.pathname)}`); return; }
       if (!response.ok) throw new Error(response.status === 503 ? "The operations service is unavailable." : `The request failed (${response.status}).`);
       const payload: unknown = await response.json();
@@ -65,7 +66,7 @@ export function OperationsPage({ config }: { config: PageConfig }) {
   function exportCsv() { const blob = new Blob([csv(visibleRows, columns)], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${config.title.toLowerCase().replaceAll(" ", "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); }
   async function mutate(path: string, body: Row = {}) {
     setNotice("");
-    const response = await fetch(`/api/admin/operations${path}`, { method: "POST", headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken, "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
+    const response = await fetch(`${config.apiBase ?? "/api/admin/operations"}${path}`, { method: "POST", headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken, "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
     if (!response.ok) { setNotice(`Action failed (${response.status}). No changes were applied by this client.`); return null; }
     setNotice("Action completed."); await load();
     const payload: unknown = await response.json().catch(() => null);

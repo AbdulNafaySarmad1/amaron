@@ -74,8 +74,10 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
                 var available = OperationsCalculations.AvailableToSell(stock.OnHand, stock.Reserved, stock.SafetyStock, stock.Unavailable);
                 var fulfilled = Math.Min(available, remaining);
                 if (fulfilled == 0) continue;
+                var consumed = await InventoryBalanceOperations.ConsumeAvailableAsync(db, stock, fulfilled, now, cancellationToken);
                 stock.OnHand -= fulfilled; stock.UpdatedAt = now; remaining -= fulfilled;
-                db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = stock.WarehouseId, LocationId = stock.LocationId, QuantityDelta = -fulfilled, Reason = InventoryMovementReason.OrderFulfilled, ReferenceType = "Order", ReferenceId = order.Id.ToString(), CreatedBy = "checkout", CreatedAt = now });
+                foreach (var allocation in consumed)
+                    db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = stock.WarehouseId, LocationId = allocation.Balance.LocationId, LotId = allocation.Balance.LotId, State = InventoryState.Available, QuantityDelta = -allocation.Quantity, Reason = InventoryMovementReason.OrderFulfilled, ReferenceType = "Order", ReferenceId = order.Id.ToString(), CreatedBy = "checkout", CreatedAt = now });
                 if (remaining == 0) break;
             }
             if (variantStocks.Count > 0 && remaining > 0) throw CommerceErrors.Conflict("insufficient_available_stock", $"Insufficient available warehouse stock for {variant.Product.Title}.");

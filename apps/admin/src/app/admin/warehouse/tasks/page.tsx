@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ apiBase: "/api/admin/supply-chain", title: "Warehouse tasks", eyebrow: "WAREHOUSE / EXECUTION", description: "Track assigned physical work through open, in-progress, completed, or cancelled states.", endpoint: "/warehouse-tasks", empty: "No warehouse tasks are active." }} />; }

@@ -192,7 +192,7 @@ public sealed class OperationsService(ICommerceDbContext db, IReadModelCache cac
         return rows.Select(x => MapStock(x.s, x.w.Name, null, x.Sku, demand.GetValueOrDefault(x.s.VariantId))).ToList();
     }
 
-    public async Task<InventoryLedgerEntryDto> AdjustInventoryAsync(InventoryAdjustmentRequest request, string actor, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<InventoryLedgerEntryDto>> AdjustInventoryAsync(InventoryAdjustmentRequest request, string actor, CancellationToken cancellationToken)
     {
         if (request.QuantityDelta == 0 || Math.Abs(request.QuantityDelta) > 100_000) throw CommerceErrors.Validation("Adjustment quantity is invalid.");
         if (!Enum.TryParse<InventoryMovementReason>(request.Reason, true, out var reason) || reason is InventoryMovementReason.TransferIn or InventoryMovementReason.TransferOut or InventoryMovementReason.OrderReserved or InventoryMovementReason.ReservationReleased or InventoryMovementReason.OrderFulfilled) throw CommerceErrors.Validation("Use an allowed adjustment reason.");
@@ -202,26 +202,36 @@ public sealed class OperationsService(ICommerceDbContext db, IReadModelCache cac
         var inventory = await db.Inventory.Include(x => x.Variant).ThenInclude(x => x.Product).SingleAsync(x => x.VariantId == request.VariantId, cancellationToken);
         if (stock.OnHand + request.QuantityDelta < stock.Reserved + stock.Unavailable) throw CommerceErrors.Conflict("insufficient_inventory", "The adjustment would reduce stock below reserved or unavailable units.");
         var before = new { stock.OnHand, inventory.QuantityOnHand };
+        var now = clock.GetUtcNow();
+        IReadOnlyList<(InventoryBalance Balance, int Quantity)> consumed = [];
+        if (request.QuantityDelta < 0)
+            consumed = await InventoryBalanceOperations.ConsumeAvailableAsync(db, stock, -request.QuantityDelta, now, cancellationToken);
+        else
+        {
+            var balance = await InventoryBalanceOperations.EnsureUnscopedAvailableAsync(db, stock, now, cancellationToken);
+            balance.Quantity += request.QuantityDelta; balance.UpdatedAt = now;
+        }
         stock.OnHand += request.QuantityDelta; stock.UpdatedAt = clock.GetUtcNow(); inventory.QuantityOnHand += request.QuantityDelta; inventory.UpdatedAt = clock.GetUtcNow();
-        var ledger = Ledger(request.VariantId, request.WarehouseId, request.QuantityDelta, reason, "Adjustment", request.ReferenceId, actor);
-        db.InventoryLedgerEntries.Add(ledger); Audit("INVENTORY_ADJUSTED", "WarehouseStock", $"{request.WarehouseId}:{request.VariantId}", actor, before, new { stock.OnHand, inventory.QuantityOnHand }, request.Note);
+        var ledgerEntries = new List<InventoryLedgerEntry>();
+        if (request.QuantityDelta > 0)
+        {
+            var ledger = Ledger(request.VariantId, request.WarehouseId, request.QuantityDelta, reason, "Adjustment", request.ReferenceId, actor);
+            ledger.State = InventoryState.Available;
+            ledgerEntries.Add(ledger);
+        }
+        else
+        {
+            foreach (var allocation in consumed)
+            {
+                var ledger = Ledger(request.VariantId, request.WarehouseId, -allocation.Quantity, reason, "Adjustment", request.ReferenceId, actor);
+                ledger.State = InventoryState.Available; ledger.LotId = allocation.Balance.LotId; ledger.LocationId = allocation.Balance.LocationId;
+                ledgerEntries.Add(ledger);
+            }
+        }
+        db.InventoryLedgerEntries.AddRange(ledgerEntries);
+        Audit("INVENTORY_ADJUSTED", "WarehouseStock", $"{request.WarehouseId}:{request.VariantId}", actor, before, new { stock.OnHand, inventory.QuantityOnHand }, request.Note);
         await db.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); await InvalidatePricingAsync(request.VariantId, inventory.Variant.Product.Slug);
-        return MapLedger(ledger);
-    }
-
-    public async Task<IReadOnlyList<InventoryLedgerEntryDto>> TransferInventoryAsync(InventoryTransferRequest request, string actor, CancellationToken cancellationToken)
-    {
-        if (request.Quantity is < 1 or > 100_000 || request.FromWarehouseId == request.ToWarehouseId) throw CommerceErrors.Validation("Transfer request is invalid.");
-        await using var transaction = await db.BeginTransactionAsync(cancellationToken);
-        await db.LockInventoryAsync([request.VariantId], cancellationToken);
-        var stocks = await db.WarehouseStocks.Where(x => x.VariantId == request.VariantId && (x.WarehouseId == request.FromWarehouseId || x.WarehouseId == request.ToWarehouseId)).OrderBy(x => x.WarehouseId).ToListAsync(cancellationToken);
-        var from = stocks.SingleOrDefault(x => x.WarehouseId == request.FromWarehouseId) ?? throw CommerceErrors.NotFound("Source warehouse stock");
-        var to = stocks.SingleOrDefault(x => x.WarehouseId == request.ToWarehouseId) ?? throw CommerceErrors.NotFound("Destination warehouse stock");
-        if (OperationsCalculations.AvailableToSell(from.OnHand, from.Reserved, from.SafetyStock, from.Unavailable) < request.Quantity) throw CommerceErrors.Conflict("insufficient_available_stock", "Source warehouse does not have enough available stock.");
-        from.OnHand -= request.Quantity; to.OnHand += request.Quantity; from.UpdatedAt = to.UpdatedAt = clock.GetUtcNow();
-        var entries = new[] { Ledger(request.VariantId, from.WarehouseId, -request.Quantity, InventoryMovementReason.TransferOut, "Transfer", request.ReferenceId, actor), Ledger(request.VariantId, to.WarehouseId, request.Quantity, InventoryMovementReason.TransferIn, "Transfer", request.ReferenceId, actor) };
-        db.InventoryLedgerEntries.AddRange(entries); Audit("INVENTORY_TRANSFERRED", "ProductVariant", request.VariantId.ToString(), actor, null, request, request.Note); await db.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
-        return entries.Select(MapLedger).ToList();
+        return ledgerEntries.Select(MapLedger).ToList();
     }
 
     public async Task<IReadOnlyList<ReplenishmentDto>> GetReplenishmentAsync(CancellationToken cancellationToken) => (await db.ReplenishmentRecommendations.AsNoTracking().OrderByDescending(x => x.GeneratedAt).Take(300).ToListAsync(cancellationToken)).Select(MapReplenishment).ToList();

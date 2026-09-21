@@ -32,6 +32,30 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
     public DbSet<ReplenishmentRecommendation> ReplenishmentRecommendations => Set<ReplenishmentRecommendation>();
     public DbSet<OperationalAlert> OperationalAlerts => Set<OperationalAlert>();
     public DbSet<OperationsAuditEntry> OperationsAuditEntries => Set<OperationsAuditEntry>();
+    public DbSet<SupplierOrganization> SupplierOrganizations => Set<SupplierOrganization>();
+    public DbSet<SupplierUser> SupplierUsers => Set<SupplierUser>();
+    public DbSet<SupplierProductSource> SupplierProductSources => Set<SupplierProductSource>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<InboundShipment> InboundShipments => Set<InboundShipment>();
+    public DbSet<InboundShipmentLine> InboundShipmentLines => Set<InboundShipmentLine>();
+    public DbSet<FiscalInvoice> FiscalInvoices => Set<FiscalInvoice>();
+    public DbSet<FiscalInvoiceLine> FiscalInvoiceLines => Set<FiscalInvoiceLine>();
+    public DbSet<InventoryLot> InventoryLots => Set<InventoryLot>();
+    public DbSet<InventoryBalance> InventoryBalances => Set<InventoryBalance>();
+    public DbSet<GoodsReceipt> GoodsReceipts => Set<GoodsReceipt>();
+    public DbSet<GoodsReceiptLine> GoodsReceiptLines => Set<GoodsReceiptLine>();
+    public DbSet<InvoiceMatch> InvoiceMatches => Set<InvoiceMatch>();
+    public DbSet<RequestForQuotation> RequestsForQuotation => Set<RequestForQuotation>();
+    public DbSet<RequestForQuotationLine> RequestForQuotationLines => Set<RequestForQuotationLine>();
+    public DbSet<RequestForQuotationSupplier> RequestForQuotationSuppliers => Set<RequestForQuotationSupplier>();
+    public DbSet<SupplierQuotation> SupplierQuotations => Set<SupplierQuotation>();
+    public DbSet<SupplierQuotationLine> SupplierQuotationLines => Set<SupplierQuotationLine>();
+    public DbSet<WarehouseTask> WarehouseTasks => Set<WarehouseTask>();
+    public DbSet<CycleCount> CycleCounts => Set<CycleCount>();
+    public DbSet<CycleCountLine> CycleCountLines => Set<CycleCountLine>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
+    public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -120,16 +144,24 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
         {
             e.ToTable("warehouse_stock"); e.HasKey(x => new { x.WarehouseId, x.VariantId }); e.Property(x => x.Version).IsRowVersion(); e.HasIndex(x => new { x.VariantId, x.WarehouseId }); e.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict); e.HasOne<ProductVariant>().WithMany().HasForeignKey(x => x.VariantId).OnDelete(DeleteBehavior.Restrict); e.HasOne<InventoryLocation>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict); e.ToTable(t => t.HasCheckConstraint("ck_warehouse_stock_nonnegative", "\"OnHand\" >= 0 AND \"Reserved\" >= 0 AND \"SafetyStock\" >= 0 AND \"Unavailable\" >= 0 AND \"Inbound\" >= 0 AND \"Reserved\" + \"Unavailable\" <= \"OnHand\""));
         });
-        model.Entity<InventoryLedgerEntry>(e => { e.ToTable("inventory_ledger"); e.HasKey(x => x.Id); e.Property(x => x.Reason).HasConversion<string>().HasMaxLength(40); e.Property(x => x.ReferenceType).HasMaxLength(80); e.Property(x => x.ReferenceId).HasMaxLength(120); e.Property(x => x.CreatedBy).HasMaxLength(64); e.HasIndex(x => new { x.VariantId, x.WarehouseId, x.CreatedAt }); e.HasOne<ProductVariant>().WithMany().HasForeignKey(x => x.VariantId).OnDelete(DeleteBehavior.Restrict); e.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict); e.HasOne<InventoryLocation>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict); });
+        model.Entity<InventoryLedgerEntry>(e => { e.ToTable("inventory_ledger"); e.HasKey(x => x.Id); e.Property(x => x.Reason).HasConversion<string>().HasMaxLength(40); e.Property(x => x.State).HasConversion<string>().HasMaxLength(30).HasDefaultValue(InventoryState.Available); e.Property(x => x.ReferenceType).HasMaxLength(80); e.Property(x => x.ReferenceId).HasMaxLength(120); e.Property(x => x.CreatedBy).HasMaxLength(64); e.HasIndex(x => new { x.VariantId, x.WarehouseId, x.CreatedAt }); e.HasOne<ProductVariant>().WithMany().HasForeignKey(x => x.VariantId).OnDelete(DeleteBehavior.Restrict); e.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict); e.HasOne<InventoryLocation>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict); e.HasOne<InventoryLot>().WithMany().HasForeignKey(x => x.LotId).OnDelete(DeleteBehavior.Restrict); });
         model.Entity<ReplenishmentRecommendation>(e => { e.ToTable("replenishment_recommendations"); e.HasKey(x => x.Id); e.Property(x => x.AverageDailyDemand).HasPrecision(19, 4); e.Property(x => x.ReorderPoint).HasPrecision(19, 4); e.Property(x => x.ExplanationJson).HasColumnType("jsonb"); e.Property(x => x.ModelVersion).HasMaxLength(100); e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30); e.Property(x => x.ApprovedBy).HasMaxLength(64); e.HasIndex(x => new { x.Status, x.GeneratedAt }); e.HasOne<ProductVariant>().WithMany().HasForeignKey(x => x.VariantId).OnDelete(DeleteBehavior.Restrict); e.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict); });
         model.Entity<OperationalAlert>(e => { e.ToTable("operational_alerts"); e.HasKey(x => x.Id); e.Property(x => x.Type).HasMaxLength(60); e.Property(x => x.DeduplicationKey).HasMaxLength(240); e.Property(x => x.Severity).HasMaxLength(20); e.Property(x => x.Title).HasMaxLength(240); e.Property(x => x.Detail).HasMaxLength(1000); e.Property(x => x.Status).HasConversion<string>().HasMaxLength(30); e.Property(x => x.AcknowledgedBy).HasMaxLength(64); e.HasIndex(x => new { x.DeduplicationKey, x.Status }).IsUnique().HasFilter("\"Status\" <> 'Resolved'"); });
         model.Entity<OperationsAuditEntry>(e => { e.ToTable("operations_audit"); e.HasKey(x => x.Id); e.Property(x => x.EventType).HasMaxLength(80); e.Property(x => x.ResourceType).HasMaxLength(80); e.Property(x => x.ResourceId).HasMaxLength(120); e.Property(x => x.ActorId).HasMaxLength(64); e.Property(x => x.BeforeJson).HasColumnType("jsonb"); e.Property(x => x.AfterJson).HasColumnType("jsonb"); e.Property(x => x.Reason).HasMaxLength(500); e.HasIndex(x => new { x.ResourceType, x.ResourceId, x.CreatedAt }); e.HasIndex(x => x.CreatedAt); });
+        model.ConfigureSupplyChain();
+        model.ConfigureWarehouseExecution();
     }
 
     public async Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken cancellationToken) => new ApplicationTransaction(await Database.BeginTransactionAsync(cancellationToken));
     public Task LockCartAsync(Guid cartId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM carts WHERE \"Id\" = {cartId} FOR UPDATE", cancellationToken);
     public Task LockInventoryAsync(IReadOnlyCollection<Guid> variantIds, CancellationToken cancellationToken) => Database.ExecuteSqlRawAsync("SELECT 1 FROM inventory WHERE \"VariantId\" = ANY ({0}) ORDER BY \"VariantId\" FOR UPDATE", [variantIds.ToArray()], cancellationToken);
     public Task LockPriceActivationAsync(CancellationToken cancellationToken) => Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(6208462301)", cancellationToken);
+    public Task LockPurchaseOrderAsync(Guid purchaseOrderId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM purchase_orders WHERE \"Id\" = {purchaseOrderId} FOR UPDATE", cancellationToken);
+    public Task LockReceiptIdempotencyAsync(string key, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 6208462302))", cancellationToken);
+    public Task LockRequestForQuotationAsync(Guid rfqId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM requests_for_quotation WHERE \"Id\" = {rfqId} FOR UPDATE", cancellationToken);
+    public Task LockCycleCountAsync(Guid cycleCountId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM cycle_counts WHERE \"Id\" = {cycleCountId} FOR UPDATE", cancellationToken);
+    public Task LockStockTransferAsync(Guid stockTransferId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM stock_transfers WHERE \"Id\" = {stockTransferId} FOR UPDATE", cancellationToken);
+    public Task LockStockTransferIdempotencyAsync(string key, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 6208462303))", cancellationToken);
 
     private sealed class ApplicationTransaction(IDbContextTransaction transaction) : IApplicationTransaction
     {

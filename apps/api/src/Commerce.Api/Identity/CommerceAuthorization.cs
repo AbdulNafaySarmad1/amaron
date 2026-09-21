@@ -36,6 +36,24 @@ public static class CommercePermissions
     public const string PromotionsView = "promotions-view";
     public const string PromotionsManage = "promotions-manage";
     public const string OperationsAudit = "operations-audit";
+    public const string SuppliersView = "suppliers-view";
+    public const string SuppliersManage = "suppliers-manage";
+    public const string ProcurementView = "procurement-view";
+    public const string ProcurementManage = "procurement-manage";
+    public const string ProcurementApprove = "procurement-approve";
+    public const string ReceivingView = "receiving-view";
+    public const string ReceivingManage = "receiving-manage";
+    public const string InvoicesView = "invoices-view";
+    public const string InvoicesManage = "invoices-manage";
+    public const string InvoicesMatch = "invoices-match";
+    public const string SupplierPortal = "supplier-portal";
+    public const string WarehouseTasksView = "warehouse-tasks-view";
+    public const string WarehouseTasksManage = "warehouse-tasks-manage";
+    public const string CycleCountsView = "cycle-counts-view";
+    public const string CycleCountsManage = "cycle-counts-manage";
+    public const string CycleCountsReconcile = "cycle-counts-reconcile";
+    public const string StockTransfersView = "stock-transfers-view";
+    public const string StockTransfersManage = "stock-transfers-manage";
 }
 
 public static class CommercePolicies
@@ -63,6 +81,24 @@ public static class CommercePolicies
     public const string PromotionsRead = "Promotions.Read";
     public const string PromotionsManage = "Promotions.Manage";
     public const string OperationsAudit = "Operations.Audit";
+    public const string SuppliersRead = "Suppliers.Read";
+    public const string SuppliersManage = "Suppliers.Manage";
+    public const string ProcurementRead = "Procurement.Read";
+    public const string ProcurementManage = "Procurement.Manage";
+    public const string ProcurementApprove = "Procurement.Approve";
+    public const string ReceivingRead = "Receiving.Read";
+    public const string ReceivingManage = "Receiving.Manage";
+    public const string InvoicesRead = "Invoices.Read";
+    public const string InvoicesManage = "Invoices.Manage";
+    public const string InvoicesMatch = "Invoices.Match";
+    public const string SupplierPortal = "Supplier.Portal";
+    public const string WarehouseTasksRead = "WarehouseTasks.Read";
+    public const string WarehouseTasksManage = "WarehouseTasks.Manage";
+    public const string CycleCountsRead = "CycleCounts.Read";
+    public const string CycleCountsManage = "CycleCounts.Manage";
+    public const string CycleCountsReconcile = "CycleCounts.Reconcile";
+    public const string StockTransfersRead = "StockTransfers.Read";
+    public const string StockTransfersManage = "StockTransfers.Manage";
 
     public static void AddCommercePolicies(this AuthorizationOptions options)
     {
@@ -92,6 +128,24 @@ public static class CommercePolicies
         options.AddPolicy(PromotionsRead, policy => Permission(policy, CommercePermissions.PromotionsView));
         options.AddPolicy(PromotionsManage, policy => Permission(policy, CommercePermissions.PromotionsManage));
         options.AddPolicy(OperationsAudit, policy => Permission(policy, CommercePermissions.OperationsAudit));
+        options.AddPolicy(SuppliersRead, policy => Permission(policy, CommercePermissions.SuppliersView));
+        options.AddPolicy(SuppliersManage, policy => Permission(policy, CommercePermissions.SuppliersManage));
+        options.AddPolicy(ProcurementRead, policy => Permission(policy, CommercePermissions.ProcurementView));
+        options.AddPolicy(ProcurementManage, policy => Permission(policy, CommercePermissions.ProcurementManage));
+        options.AddPolicy(ProcurementApprove, policy => Permission(policy, CommercePermissions.ProcurementApprove));
+        options.AddPolicy(ReceivingRead, policy => Permission(policy, CommercePermissions.ReceivingView));
+        options.AddPolicy(ReceivingManage, policy => Permission(policy, CommercePermissions.ReceivingManage));
+        options.AddPolicy(InvoicesRead, policy => Permission(policy, CommercePermissions.InvoicesView));
+        options.AddPolicy(InvoicesManage, policy => Permission(policy, CommercePermissions.InvoicesManage));
+        options.AddPolicy(InvoicesMatch, policy => Permission(policy, CommercePermissions.InvoicesMatch));
+        options.AddPolicy(SupplierPortal, policy => Permission(policy, CommercePermissions.SupplierPortal));
+        options.AddPolicy(WarehouseTasksRead, policy => Permission(policy, CommercePermissions.WarehouseTasksView));
+        options.AddPolicy(WarehouseTasksManage, policy => Permission(policy, CommercePermissions.WarehouseTasksManage));
+        options.AddPolicy(CycleCountsRead, policy => Permission(policy, CommercePermissions.CycleCountsView));
+        options.AddPolicy(CycleCountsManage, policy => Permission(policy, CommercePermissions.CycleCountsManage));
+        options.AddPolicy(CycleCountsReconcile, policy => Permission(policy, CommercePermissions.CycleCountsReconcile));
+        options.AddPolicy(StockTransfersRead, policy => Permission(policy, CommercePermissions.StockTransfersView));
+        options.AddPolicy(StockTransfersManage, policy => Permission(policy, CommercePermissions.StockTransfersManage));
     }
 }
 
