@@ -1,0 +1,11 @@
+[Container]
+Image=valkey/valkey:8-alpine
+ContainerName=amaron-valkey
+Network=commerce.network
+Exec=valkey-server --save '' --appendonly no
+ReadOnly=true
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+
+[Service]
+Restart=on-failure
+RestartSec=10

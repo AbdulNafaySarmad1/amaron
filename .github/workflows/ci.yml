@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.x, cache: npm, cache-dependency-path: "apps/*/package-lock.json" }
+      - run: dotnet restore Commerce.slnx
+      - run: dotnet build Commerce.slnx --no-restore
+      - run: dotnet test Commerce.slnx --no-restore
+      - run: npm ci && npm test -- --run && npm run typecheck && npm run lint && npm run build && npm audit --omit=dev
+        working-directory: apps/storefront
+      - run: npm ci && npm test -- --run && npm run typecheck && npm run lint && npm run build && npm audit --omit=dev
+        working-directory: apps/admin
+      - name: Scan tracked files for obvious secrets
+        run: "! git grep -nEi '(cloudinary_api_secret|password|client_secret)\s*[:=]\s*[^$][^[:space:]]{12,}' -- ':!infra/compose.yaml' ':!.env.example'"
+
+  publish-images:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: ${{ github.actor }}, password: ${{ secrets.GITHUB_TOKEN }} }
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/src/Commerce.Api/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/amaron-commerce-api:${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/storefront/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/amaron-storefront:${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}

@@ -1,0 +1,12 @@
+[Container]
+Image=ghcr.io/OWNER/amaron-storefront:COMMIT_SHA
+ContainerName=amaron-storefront
+Network=commerce.network
+EnvironmentFile=%h/.config/amaron/storefront.env
+PublishPort=127.0.0.1:3000:3000
+ReadOnly=true
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+
+[Service]
+Restart=on-failure
+RestartSec=10

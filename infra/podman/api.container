@@ -1,0 +1,12 @@
+[Container]
+Image=ghcr.io/OWNER/amaron-commerce-api:COMMIT_SHA
+ContainerName=amaron-api
+Network=commerce.network
+EnvironmentFile=%h/.config/amaron/api.env
+PublishPort=127.0.0.1:8080:8080
+ReadOnly=true
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+
+[Service]
+Restart=on-failure
+RestartSec=10
