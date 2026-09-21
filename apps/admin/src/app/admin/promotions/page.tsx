@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ title: "Promotions", eyebrow: "COMMERCIAL / PROMOTIONS", description: "Track promotion status and approval readiness.", endpoint: "/promotions", empty: "No promotions match the current filter.", approve: { path: "/promotions/:id/approve", label: "Approve selected" } }} />; }

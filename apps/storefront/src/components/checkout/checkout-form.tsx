@@ -43,7 +43,7 @@ export function CheckoutForm() {
     };
     const payload = JSON.stringify({ cartId: cart?.cartId, cartVersion: cart?.version, shippingAddress });
     try {
-      const result = await browserRequest<CheckoutResult>("/api/checkout/confirm", { method: "POST", headers: { "Idempotency-Key": await keyFor(payload) }, body: JSON.stringify({ shippingAddress }) }, 22_000);
+      const result = await browserRequest<CheckoutResult>("/api/bff/checkout/confirm", { method: "POST", headers: { "Idempotency-Key": await keyFor(payload) }, body: JSON.stringify({ shippingAddress }) }, 22_000);
       try { sessionStorage.removeItem("amaron:checkout-attempt"); } catch { /* Storage is an optimization, not a checkout dependency. */ }
       checkoutAttempt.current = null;
       await load();

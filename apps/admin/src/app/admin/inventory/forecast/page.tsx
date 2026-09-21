@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ title: "Inventory forecast", eyebrow: "FULFILMENT / FORWARD VIEW", description: "Review projected inventory coverage from service-provided forecasts.", endpoint: "/inventory", empty: "No inventory forecast points are available.", chart: { label: "Projected stock", fields: ["projected", "forecast", "available", "quantity"] } }} />; }

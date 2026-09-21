@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ title: "Pricing", eyebrow: "COMMERCIAL / PRICING", description: "Review variants, current price positions, and controlled bulk changes.", endpoint: "/variants", empty: "No variants match the current filter.", chart: { label: "Price series", fields: ["price", "currentPrice", "amount"] }, bulkPrices: true }} />; }

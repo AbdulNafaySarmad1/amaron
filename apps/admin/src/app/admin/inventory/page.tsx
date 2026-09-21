@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ title: "Inventory", eyebrow: "FULFILMENT / STOCK", description: "Monitor stock positions across managed locations.", endpoint: "/inventory", empty: "No inventory positions match the current filter.", chart: { label: "Inventory position", fields: ["available", "onHand", "quantity"] } }} />; }

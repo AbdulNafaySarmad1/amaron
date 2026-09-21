@@ -15,6 +15,60 @@ services:
     volumes:
       - commerce-postgres:/var/lib/postgresql
 
+  keycloak-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_local_dev_only}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - keycloak-postgres:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_local_dev_only}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-local-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-admin-change-me}
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      STOREFRONT_CLIENT_SECRET: ${KEYCLOAK_STOREFRONT_CLIENT_SECRET:-storefront-local-dev-secret-change-me}
+      ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-admin-local-dev-secret-change-me}
+      DEV_CUSTOMER_PASSWORD: ${KEYCLOAK_CUSTOMER_PASSWORD:-CustomerLocal123!}
+      DEV_SUPPORT_PASSWORD: ${KEYCLOAK_SUPPORT_PASSWORD:-SupportLocal123!}
+      DEV_CATALOG_MANAGER_PASSWORD: ${KEYCLOAK_CATALOG_MANAGER_PASSWORD:-CatalogLocal123!}
+    ports:
+      - "127.0.0.1:8081:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c "exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 &&
+          grep -q '200 OK' <&3"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    volumes:
+      - ./keycloak/commerce-realm.json:/opt/keycloak/data/import/commerce-realm.json:ro
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+
   valkey:
     image: valkey/valkey:8-alpine
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
@@ -40,6 +94,10 @@ services:
       APPLY_MIGRATIONS: "true"
       ALLOW_DEVELOPMENT_IDENTITY: "true"
       FRONTEND_ORIGIN: http://localhost:3000
+      AUTH_AUTHORITY: http://localhost:8081/realms/commerce
+      AUTH_METADATA_ADDRESS: http://keycloak:8080/realms/commerce/.well-known/openid-configuration
+      AUTH_AUDIENCE: commerce-api
+      AUTH_ROLE_CLIENT_ID: commerce-api
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
@@ -55,11 +113,17 @@ services:
     build:
       context: ..
       dockerfile: apps/storefront/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080
-        NEXT_PUBLIC_DEMO_CUSTOMER_ID: storefront-demo
     environment:
       API_URL: http://api:8080
+      APP_URL: http://localhost:3000
+      REDIS_URL: redis://valkey:6379
+      OIDC_ISSUER: http://localhost:8081/realms/commerce
+      OIDC_METADATA_URL: http://keycloak:8080/realms/commerce/.well-known/openid-configuration
+      OIDC_ALLOW_INSECURE: "true"
+      OIDC_CLIENT_ID: storefront-web
+      OIDC_CLIENT_SECRET: ${KEYCLOAK_STOREFRONT_CLIENT_SECRET:-storefront-local-dev-secret-change-me}
+      OIDC_REDIRECT_URI: http://localhost:3000/api/auth/callback
+      SESSION_COOKIE_SECURE: "false"
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
@@ -69,6 +133,38 @@ services:
       retries: 20
     depends_on:
       api:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: ..
+      dockerfile: apps/admin/Dockerfile
+    environment:
+      API_URL: http://api:8080
+      APP_URL: http://localhost:3001
+      REDIS_URL: redis://valkey:6379
+      OIDC_ISSUER: http://localhost:8081/realms/commerce
+      OIDC_METADATA_URL: http://keycloak:8080/realms/commerce/.well-known/openid-configuration
+      OIDC_ALLOW_INSECURE: "true"
+      OIDC_CLIENT_ID: admin-web
+      OIDC_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-admin-local-dev-secret-change-me}
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_TTL_SECONDS: "28800"
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      api:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
 
   loadtest:
@@ -85,3 +181,4 @@ services:
 
 volumes:
   commerce-postgres:
+  keycloak-postgres:

@@ -9,7 +9,7 @@ import type { Order } from "@/lib/types";
 export function OrderDetail({ id, placed }: { id: string; placed: boolean }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState(false);
-  useEffect(() => { browserRequest<Order>(`/api/orders/${id}`).then(setOrder).catch(() => setError(true)); }, [id]);
+  useEffect(() => { browserRequest<Order>(`/api/bff/orders/${encodeURIComponent(id)}`).then(setOrder).catch(() => setError(true)); }, [id]);
   if (error) return <main className="order-detail orders-state"><h1>We couldn&apos;t find that order.</h1><Link className="text-link" href="/orders">Back to your orders</Link></main>;
   if (!order) return <main className="order-detail orders-state"><p>Preparing your order details…</p></main>;
   return <main className="order-detail">

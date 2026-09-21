@@ -120,6 +120,8 @@ button { color: inherit; }
 .search-suggestions p { color: var(--ink-soft); font-size: var(--text-sm); margin: var(--space-3); }
 .cart-trigger { align-items: center; background: transparent; border: 0; cursor: pointer; display: flex; font-size: var(--text-sm); font-weight: 780; gap: var(--space-2); padding: var(--space-2); }
 .cart-trigger b { background: var(--accent); border-radius: var(--radius-pill); color: white; display: grid; font-size: 0.7rem; height: 1.45rem; min-width: 1.45rem; padding-inline: 0.25rem; place-items: center; }
+.header-account { align-items: center; display: flex; font-size: var(--text-xs); gap: var(--space-3); white-space: nowrap; }
+.header-account > span { color: var(--ink-soft); max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
 
 .foundation-page { display: grid; align-content: center; min-height: 100svh; max-width: 52rem; padding: clamp(2rem, 8vw, 8rem); }
 .foundation-page h1, .design-review h1 { font-family: var(--font-serif); font-size: var(--text-2xl); font-variation-settings: "SOFT" 80, "WONK" 1; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); margin: var(--space-3) 0 var(--space-6); }

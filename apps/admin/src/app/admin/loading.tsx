@@ -1,0 +1,1 @@
+export default function Loading() { return <section className="page"><div className="page-title-skeleton" /><div className="panel loading-table" aria-label="Loading workspace" aria-busy="true">{Array.from({ length: 8 }, (_, index) => <span key={index} />)}</div></section>; }

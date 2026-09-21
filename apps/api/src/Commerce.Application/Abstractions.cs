@@ -11,6 +11,7 @@ public interface IApplicationTransaction : IAsyncDisposable
 
 public interface ICommerceDbContext
 {
+    DbSet<ApplicationUser> ApplicationUsers { get; }
     DbSet<Category> Categories { get; }
     DbSet<Product> Products { get; }
     DbSet<ProductVariant> ProductVariants { get; }
@@ -22,10 +23,24 @@ public interface ICommerceDbContext
     DbSet<Order> Orders { get; }
     DbSet<OrderItem> OrderItems { get; }
     DbSet<IdempotencyRecord> IdempotencyRecords { get; }
+    DbSet<PriceRecord> PriceRecords { get; }
+    DbSet<PricingPolicy> PricingPolicies { get; }
+    DbSet<PriceRecommendation> PriceRecommendations { get; }
+    DbSet<Promotion> Promotions { get; }
+    DbSet<DemandObservation> DemandObservations { get; }
+    DbSet<DemandForecast> DemandForecasts { get; }
+    DbSet<Warehouse> Warehouses { get; }
+    DbSet<InventoryLocation> InventoryLocations { get; }
+    DbSet<WarehouseStock> WarehouseStocks { get; }
+    DbSet<InventoryLedgerEntry> InventoryLedgerEntries { get; }
+    DbSet<ReplenishmentRecommendation> ReplenishmentRecommendations { get; }
+    DbSet<OperationalAlert> OperationalAlerts { get; }
+    DbSet<OperationsAuditEntry> OperationsAuditEntries { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
     Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
     Task LockCartAsync(Guid cartId, CancellationToken cancellationToken);
     Task LockInventoryAsync(IReadOnlyCollection<Guid> variantIds, CancellationToken cancellationToken);
+    Task LockPriceActivationAsync(CancellationToken cancellationToken);
 }
 
 public interface IReadModelCache

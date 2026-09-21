@@ -1,8 +1,11 @@
 import type { Problem } from "@/lib/types";
 
-const publicApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-const serverApiUrl = process.env.API_URL ?? publicApiUrl;
-const demoCustomerId = process.env.NEXT_PUBLIC_DEMO_CUSTOMER_ID;
+const serverApiUrl = process.env.API_URL ?? "http://localhost:8080";
+let csrfToken: string | null = null;
+
+export function setCsrfToken(value: string | null) {
+  csrfToken = value;
+}
 
 export class ApiError extends Error {
   constructor(public readonly status: number, public readonly problem: Problem) {
@@ -33,12 +36,19 @@ export async function serverGet<T>(path: string, revalidate = 30, timeoutMs = 8_
 
 export async function browserRequest<T>(path: string, init?: RequestInit, timeoutMs = 10_000): Promise<T> {
   const headers = new Headers(init?.headers);
+  headers.delete("Authorization");
+  headers.delete("X-Customer-Id");
+  headers.delete("X-Admin");
   headers.set("Accept", "application/json");
-  if (demoCustomerId) headers.set("X-Customer-Id", demoCustomerId);
   if (init?.body) headers.set("Content-Type", "application/json");
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    if (!csrfToken) throw new Error("Your session is not ready. Refresh the page and try again.");
+    headers.set("X-CSRF-Token", csrfToken);
+  }
   let response: Response;
   try {
-    response = await fetch(`${publicApiUrl}${path}`, { ...init, headers, signal: requestSignal(init?.signal, timeoutMs) });
+    response = await fetch(path, { ...init, headers, credentials: "same-origin", signal: requestSignal(init?.signal, timeoutMs) });
   } catch (error) {
     if (error instanceof DOMException && error.name === "TimeoutError") throw new RequestTimeoutError();
     throw error;

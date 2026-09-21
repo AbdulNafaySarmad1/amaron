@@ -39,4 +39,6 @@ export type Order = { id: string; orderNumber: string; status: string; subtotal:
 export type CheckoutResult = { order: Order; idempotencyReplayed: boolean };
 export type ShippingAddress = { recipient: string; line1: string; line2?: string; city: string; region: string; postalCode: string; countryCode: string };
 
+export type AuthSession = { authenticated: false } | { authenticated: true; csrfToken: string; user: { name?: string } };
+
 export type Problem = { title?: string; detail?: string; status?: number; code?: string; traceId?: string };

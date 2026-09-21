@@ -1,0 +1,2 @@
+import { OperationsPage } from "@/components/operations-page";
+export default function Page() { return <OperationsPage config={{ title: "Price recommendations", eyebrow: "COMMERCIAL / DECISIONS", description: "Review model recommendations before approving a price action.", endpoint: "/pricing/recommendations", empty: "There are no price recommendations awaiting review.", chart: { label: "Recommended price series", fields: ["recommendedPrice", "price", "amount"] }, approve: { path: "/pricing/:id/approve", label: "Approve selected" } }} />; }

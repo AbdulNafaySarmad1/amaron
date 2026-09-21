@@ -5,10 +5,6 @@ RUN npm ci
 
 FROM node:24-alpine AS build
 WORKDIR /app
-ARG NEXT_PUBLIC_API_URL=http://localhost:8080
-ARG NEXT_PUBLIC_DEMO_CUSTOMER_ID=storefront-demo
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_DEMO_CUSTOMER_ID=$NEXT_PUBLIC_DEMO_CUSTOMER_ID
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY apps/storefront/ ./
 RUN npm run build

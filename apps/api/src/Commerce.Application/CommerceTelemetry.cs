@@ -14,6 +14,8 @@ public static class CommerceTelemetry
     public static readonly Counter<long> CheckoutFailures = Meter.CreateCounter<long>("commerce.checkout.failures");
     public static readonly Counter<long> OrdersCreated = Meter.CreateCounter<long>("commerce.orders.created");
     public static readonly Counter<long> RateLimitRejections = Meter.CreateCounter<long>("commerce.rate_limit.rejections");
+    public static readonly Counter<long> AuthenticationFailures = Meter.CreateCounter<long>("commerce.authentication.failures");
+    public static readonly Counter<long> AuthorizationDenials = Meter.CreateCounter<long>("commerce.authorization.denials");
     public static readonly Histogram<double> SearchDuration = Meter.CreateHistogram<double>("commerce.search.duration", "ms");
     public static readonly Histogram<double> CheckoutDuration = Meter.CreateHistogram<double>("commerce.checkout.duration", "ms");
 }

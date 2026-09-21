@@ -2,9 +2,17 @@
 
 ## Boundaries
 
-The Next.js App Router uses Server Components for route data acquisition and client components for cart state, checkout forms, autocomplete, and interaction effects. Public server reads use container-internal `API_URL`; browser reads use `NEXT_PUBLIC_API_URL`. The root client provider does not convert its server-rendered children into client components.
+The Next.js App Router uses Server Components for public route data acquisition and client components for cart state, checkout forms, autocomplete, and interaction effects. Public server reads use container-internal `API_URL`. Private browser calls use same-origin `/api/bff/*` route handlers; no API URL, customer ID, or bearer token is exposed as public browser configuration. The root client provider does not convert its server-rendered children into client components.
 
-Public commerce routes are request-rendered to keep image builds independent of API availability. API and HybridCache policies provide the active public caching layer. Search is request-dependent. Private shopper calls are browser-only and `no-store` at the API.
+Public commerce routes are request-rendered to keep image builds independent of API availability. API and HybridCache policies provide the active public caching layer. Search is request-dependent. Private shopper calls are browser-only and `no-store` at both BFF and API.
+
+## Identity BFF
+
+`/api/auth/login` starts OIDC authorization code flow with S256 PKCE, state, nonce, a ten-minute Redis transaction, and a sanitized local `returnTo`. `/api/auth/callback` validates that transaction and creates an eight-hour-by-default Redis session. Production cookies use `__Host-` names and are Secure, HttpOnly, SameSite=Lax, and path `/`; their values are random session IDs, not tokens. `/api/auth/session` exposes only authentication state, display name, and the session CSRF token. Logout deletes the session before returning the provider end-session URL.
+
+The BFF refreshes access tokens server-side within a 30-second expiry window and forwards only `Accept`, JSON content type, `Authorization`, and, when supplied, `Idempotency-Key`. Its route/method allowlist covers cart item reads/writes, checkout confirmation, and order reads; it is not a general API proxy. Mutations and logout require exact canonical Origin and CSRF-token checks. `APP_URL` is required in production and defines that canonical origin; OIDC issuer and optional internal metadata URL remain server-only.
+
+The dedicated `apps/admin` application uses the same server-side OIDC and Redis session pattern at `http://localhost:3001`, with its own client, cookie namespace, CSRF token, and explicit `/api/admin/operations/**` method/path allowlist. It never exposes API bearer tokens to browser JavaScript. The admin interface provides grouped operational metrics, sortable/exportable tables, pricing bulk preview before apply, forecast and replenishment actions, approval queues, alerts, and audit views. The API still enforces every granular permission and business invariant.
 
 ## State and consistency
 
@@ -32,8 +40,12 @@ Dense product grids disable automatic product-route prefetching to protect brows
 ## Failure domains
 
 - API or PostgreSQL: public route error boundary; private controls show local retry/error states.
+- Keycloak/OIDC: new login fails; existing sessions continue only while Redis is available and their access token remains usable. Refresh failure deletes the session and produces 401.
+- Redis session store: authentication and BFF session reads fail. Because the root layout reads the session, the current implementation can also fail public page rendering; this is not the API cache's fail-open behavior.
 - Category navigation: degrades to the permanent All goods route.
-- Valkey: transparent API fallback to PostgreSQL.
+- Valkey as API cache: transparent API fallback to PostgreSQL.
 - JavaScript/hydration: server-rendered public content remains visible; private mutations require JavaScript.
 - WebGL/GSAP: static content remains usable.
-- Production identity: public browsing works, but private flows require the decision in ADR 0004.
+- OIDC configuration: production requires HTTPS, a fixed `APP_URL`, managed client credentials, durable Redis, and provider redirect/logout URIs matching the public origin.
+
+Frontend unit tests cover CSRF and Origin helpers, safe return paths, the refresh window, and BFF route allowlisting. They do not run a browser against Keycloak or Redis and do not cover callback, refresh, logout, revocation, or outage flows end to end.

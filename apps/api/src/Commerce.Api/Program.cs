@@ -7,9 +7,14 @@ using System.Text.Json;
 using System.Threading.RateLimiting;
 using System.Net;
 using Commerce.Application;
+using Commerce.Api;
+using Commerce.Api.Identity;
 using Commerce.Contracts;
 using Commerce.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
@@ -19,6 +24,8 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Npgsql;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -26,7 +33,10 @@ using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddEnvironmentVariables();
-var allowDevelopmentIdentity = builder.Environment.IsDevelopment() && builder.Configuration.GetValue("ALLOW_DEVELOPMENT_IDENTITY", false);
+var authority = builder.Configuration["AUTH_AUTHORITY"]?.TrimEnd('/');
+var audience = builder.Configuration["AUTH_AUDIENCE"] ?? "commerce-api";
+if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(authority))
+    throw new InvalidOperationException("AUTH_AUTHORITY is required outside Development.");
 var trustedProxies = (builder.Configuration["TRUSTED_PROXY_IPS"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(IPAddress.Parse).ToArray();
 if (trustedProxies.Length > 0)
 {
@@ -45,13 +55,48 @@ builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = 
     context.ProblemDetails.Extensions["traceId"] = Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
     context.ProblemDetails.Extensions.TryAdd("code", "request_failed");
 });
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "OIDC access token issued for the commerce-api audience."
+        };
+        return Task.CompletedTask;
+    });
+    options.AddOperationTransformer((operation, context, _) =>
+    {
+        var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+        if (metadata.OfType<IAuthorizeData>().Any() && !metadata.OfType<IAllowAnonymous>().Any())
+        {
+            operation.Security ??= [];
+            operation.Security.Add(new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference("Bearer", context.Document, null)] = []
+            });
+        }
+        return Task.CompletedTask;
+    });
+});
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient("identity-health", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddCommerceInfrastructure(builder.Configuration);
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<CheckoutService>();
 builder.Services.AddScoped<StorefrontService>();
 builder.Services.AddScoped<AdminCatalogService>();
+builder.Services.AddScoped<OperationsService>();
+builder.Services.AddHostedService<OperationsPriceActivationService>();
+builder.Services.AddScoped<ApplicationUserResolver>();
+builder.Services.AddTransient<IClaimsTransformation, KeycloakClaimsTransformation>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, SecurityAuthorizationResultHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHealthChecks().AddDbContextCheck<CommerceDbContext>("postgresql", tags: ["ready"]);
 var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
@@ -105,19 +150,67 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("checkout", context => RateLimitPartition.GetFixedWindowLimiter(ClientKey(context), _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(1), AutoReplenishment = true, QueueLimit = 0 }));
     options.AddPolicy("admin", context => RateLimitPartition.GetFixedWindowLimiter(ClientKey(context), _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), AutoReplenishment = true, QueueLimit = 0 }));
 });
-builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy.WithOrigins(builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:3000").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+var frontendOrigins = (builder.Configuration["FRONTEND_ORIGINS"] ?? builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:3000")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy.WithOrigins(frontendOrigins).WithHeaders("Accept", "Content-Type", "Authorization", "Idempotency-Key", "If-Match", "If-None-Match").WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")));
 
-var authority = builder.Configuration["AUTH_AUTHORITY"];
+var authentication = builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = "CommerceIdentity";
+    options.DefaultChallengeScheme = "CommerceIdentity";
+    options.DefaultForbidScheme = "CommerceIdentity";
+}).AddPolicyScheme("CommerceIdentity", "Bearer or development identity", options =>
+{
+    options.ForwardDefaultSelector = context =>
+        !string.IsNullOrWhiteSpace(authority) && context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? JwtBearerDefaults.AuthenticationScheme
+            : DevelopmentIdentityDefaults.Scheme;
+}).AddScheme<AuthenticationSchemeOptions, DevelopmentIdentityHandler>(DevelopmentIdentityDefaults.Scheme, _ => { });
+
 if (!string.IsNullOrWhiteSpace(authority))
 {
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+    authentication.AddJwtBearer(options =>
     {
         options.Authority = authority;
-        options.Audience = builder.Configuration["AUTH_AUDIENCE"] ?? "commerce-api";
+        if (builder.Configuration["AUTH_METADATA_ADDRESS"] is { Length: > 0 } metadataAddress) options.MetadataAddress = metadataAddress;
+        options.Audience = audience;
+        options.MapInboundClaims = false;
         options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.RefreshOnIssuerKeyNotFound = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = authority,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateIssuerSigningKey = true,
+            RequireSignedTokens = true,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+            NameClaimType = "name",
+            ValidTypes = ["JWT", "at+jwt"]
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var subject = context.Principal?.FindFirstValue("sub");
+                var tokenType = context.Principal?.FindFirstValue("typ");
+                if (string.IsNullOrWhiteSpace(subject) || (!string.IsNullOrWhiteSpace(tokenType) && !string.Equals(tokenType, "Bearer", StringComparison.OrdinalIgnoreCase)))
+                    context.Fail("The access token is missing required claims.");
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                CommerceTelemetry.AuthenticationFailures.Add(1);
+                context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Commerce.Security").LogWarning("Access token validation failed: {FailureType}", context.Exception.GetType().Name);
+                return Task.CompletedTask;
+            }
+        };
     });
-    builder.Services.AddAuthorization();
 }
+builder.Services.AddAuthorization(options => options.AddCommercePolicies());
 
 var app = builder.Build();
 if (trustedProxies.Length > 0) app.UseForwardedHeaders();
@@ -155,37 +248,51 @@ app.Use(async (context, next) =>
 });
 app.UseResponseCompression();
 app.UseCors("frontend");
-if (!string.IsNullOrWhiteSpace(authority)) { app.UseAuthentication(); app.UseAuthorization(); }
+app.UseAuthentication();
 app.UseRateLimiter();
+app.UseAuthorization();
 app.UseRequestTimeouts();
 app.UseOutputCache();
 
-app.MapOpenApi();
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
-app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+if (app.Environment.IsDevelopment()) app.MapOpenApi().AllowAnonymous();
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
+app.MapGet("/health/identity", async (IHttpClientFactory clients, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(authority)) return Results.Json(new { available = false }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    var metadataAddress = builder.Configuration["AUTH_METADATA_ADDRESS"] ?? $"{authority}/.well-known/openid-configuration";
+    try
+    {
+        using var response = await clients.CreateClient("identity-health").GetAsync(metadataAddress, ct);
+        return response.IsSuccessStatusCode ? Results.Ok(new { available = true }) : Results.Json(new { available = false }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (HttpRequestException) { return Results.Json(new { available = false }, statusCode: StatusCodes.Status503ServiceUnavailable); }
+    catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return Results.Json(new { available = false }, statusCode: StatusCodes.Status503ServiceUnavailable); }
+}).RequireAuthorization(CommercePolicies.AdministrationAccess);
 
 var api = app.MapGroup("/api");
-api.MapGet("/catalog/categories", async (HttpContext http, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetCategoriesAsync(ct))).CacheOutput("public-short").RequireRateLimiting("catalog").WithRequestTimeout("catalog");
-api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search");
-api.MapGet("/catalog/products/{slug}", async (HttpContext http, string slug, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog");
-api.MapPost("/catalog/products/batch", (BatchProductsRequest request, CatalogService service, CancellationToken ct) => service.GetBatchAsync(request.ProductIds, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog");
-api.MapGet("/search/suggestions", (string q, CatalogService service, CancellationToken ct) => service.SuggestAsync(q, ct)).RequireRateLimiting("autocomplete").WithRequestTimeout("autocomplete");
-api.MapGet("/storefront/home", (StorefrontService service, CancellationToken ct) => service.GetHomeAsync(ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog");
-api.MapGet("/storefront/products/{slug}", async (HttpContext http, string slug, StorefrontService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog");
+api.MapGet("/catalog/categories", async (HttpContext http, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetCategoriesAsync(ct))).CacheOutput("public-short").RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search").AllowAnonymous();
+api.MapGet("/catalog/products/{slug}", async (HttpContext http, string slug, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapPost("/catalog/products/batch", (BatchProductsRequest request, CatalogService service, CancellationToken ct) => service.GetBatchAsync(request.ProductIds, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/search/suggestions", (string q, CatalogService service, CancellationToken ct) => service.SuggestAsync(q, ct)).RequireRateLimiting("autocomplete").WithRequestTimeout("autocomplete").AllowAnonymous();
+api.MapGet("/storefront/home", (StorefrontService service, CancellationToken ct) => service.GetHomeAsync(ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/storefront/products/{slug}", async (HttpContext http, string slug, StorefrontService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 
-api.MapGet("/storefront/cart-summary", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetSummaryAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
-api.MapGet("/cart", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
-api.MapPut("/cart/items", async (HttpContext http, SetCartItemRequest request, CartService service, CancellationToken ct) => { NoStore(http); return await service.SetItemAsync(CustomerId(http, allowDevelopmentIdentity), request, ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
-api.MapDelete("/cart/items/{variantId:guid}", async (HttpContext http, Guid variantId, CartService service, CancellationToken ct) => { NoStore(http); return await service.RemoveItemAsync(CustomerId(http, allowDevelopmentIdentity), variantId, ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
-api.MapDelete("/cart", async (HttpContext http, CartService service, CancellationToken ct) => { NoStore(http); return await service.ClearAsync(CustomerId(http, allowDevelopmentIdentity), ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
-api.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest request, CheckoutService service, CancellationToken ct) =>
+var customer = api.MapGroup("").RequireAuthorization(CommercePolicies.CustomerAccess);
+customer.MapGet("/storefront/cart-summary", async (HttpContext http, ApplicationUserResolver user, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetSummaryAsync(await user.GetRequiredUserIdAsync(ct), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+customer.MapGet("/cart", async (HttpContext http, ApplicationUserResolver user, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetAsync(await user.GetRequiredUserIdAsync(ct), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+customer.MapPut("/cart/items", async (HttpContext http, SetCartItemRequest request, ApplicationUserResolver user, CartService service, CancellationToken ct) => { NoStore(http); return await service.SetItemAsync(await user.GetRequiredUserIdAsync(ct), request, ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
+customer.MapDelete("/cart/items/{variantId:guid}", async (HttpContext http, Guid variantId, ApplicationUserResolver user, CartService service, CancellationToken ct) => { NoStore(http); return await service.RemoveItemAsync(await user.GetRequiredUserIdAsync(ct), variantId, ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
+customer.MapDelete("/cart", async (HttpContext http, ApplicationUserResolver user, CartService service, CancellationToken ct) => { NoStore(http); return await service.ClearAsync(await user.GetRequiredUserIdAsync(ct), ct); }).RequireRateLimiting("cart").WithRequestTimeout("cart-write");
+customer.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest request, ApplicationUserResolver user, CheckoutService service, CancellationToken ct) =>
 {
     NoStore(http);
     var started = Stopwatch.GetTimestamp();
     using var activity = CommerceTelemetry.ActivitySource.StartActivity("checkout.confirm");
     try
     {
-        var result = await service.ConfirmAsync(CustomerId(http, allowDevelopmentIdentity), http.Request.Headers["Idempotency-Key"].ToString(), request, ct);
+        var result = await service.ConfirmAsync(await user.GetRequiredUserIdAsync(ct), http.Request.Headers["Idempotency-Key"].ToString(), request, ct);
         if (result.IdempotencyReplayed) http.Response.Headers["Idempotency-Replayed"] = "true";
         else CommerceTelemetry.OrdersCreated.Add(1);
         activity?.SetTag("commerce.checkout.replayed", result.IdempotencyReplayed);
@@ -202,41 +309,63 @@ api.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest reques
         CommerceTelemetry.CheckoutDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 }).RequireRateLimiting("checkout").WithRequestTimeout("checkout");
-api.MapGet("/orders", async (HttpContext http, int? pageSize, CheckoutService service, CancellationToken ct) => { NoStore(http); return await service.GetOrdersAsync(CustomerId(http, allowDevelopmentIdentity), pageSize ?? 20, ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
-api.MapGet("/orders/{id:guid}", async (HttpContext http, Guid id, CheckoutService service, CancellationToken ct) => { NoStore(http); return await service.GetOrderAsync(CustomerId(http, allowDevelopmentIdentity), id, ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+customer.MapGet("/orders", async (HttpContext http, int? pageSize, ApplicationUserResolver user, IAuthorizationService authorization, CheckoutService service, CancellationToken ct) => { NoStore(http); var canReadAny = (await authorization.AuthorizeAsync(http.User, CommercePolicies.OrdersReadAny)).Succeeded; return await service.GetOrdersAsync(await user.GetRequiredUserIdAsync(ct), pageSize ?? 20, canReadAny, ct); }).RequireAuthorization(CommercePolicies.OrdersReadOwn).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+customer.MapGet("/orders/{id:guid}", async (HttpContext http, Guid id, ApplicationUserResolver user, IAuthorizationService authorization, CheckoutService service, CancellationToken ct) => { NoStore(http); var canReadAny = (await authorization.AuthorizeAsync(http.User, CommercePolicies.OrdersReadAny)).Succeeded; return await service.GetOrderAsync(await user.GetRequiredUserIdAsync(ct), id, canReadAny, ct); }).RequireAuthorization(CommercePolicies.OrdersReadOwn).RequireRateLimiting("cart").WithRequestTimeout("private-read");
 
 var admin = api.MapGroup("/admin");
-admin.RequireRateLimiting("admin").WithRequestTimeout("catalog");
+admin.RequireAuthorization(CommercePolicies.AdministrationAccess).RequireRateLimiting("admin").WithRequestTimeout("catalog");
 admin.MapGet("/products/{id:guid}", async (HttpContext http, Guid id, AdminCatalogService service, CancellationToken ct) =>
 {
-    EnsureAdmin(http, allowDevelopmentIdentity);
     var product = await service.GetProductAsync(id, ct);
     http.Response.Headers.ETag = VersionEtag(product.Version);
     return Results.Ok(product);
-});
+}).RequireAuthorization(CommercePolicies.CatalogRead);
 admin.MapPut("/products/{id:guid}", async (HttpContext http, Guid id, UpdateProductRequest request, AdminCatalogService service, IOutputCacheStore outputCache, CancellationToken ct) =>
 {
-    EnsureAdmin(http, allowDevelopmentIdentity);
     var product = await service.UpdateProductAsync(id, RequiredVersion(http), request, ct);
     await EvictPublicOutputAsync(outputCache, ct);
     http.Response.Headers.ETag = VersionEtag(product.Version);
     return Results.Ok(product);
-});
+}).RequireAuthorization(CommercePolicies.CatalogManage);
 admin.MapGet("/inventory/{variantId:guid}", async (HttpContext http, Guid variantId, AdminCatalogService service, CancellationToken ct) =>
 {
-    EnsureAdmin(http, allowDevelopmentIdentity);
     var inventory = await service.GetInventoryAsync(variantId, ct);
     http.Response.Headers.ETag = VersionEtag(inventory.Version);
     return Results.Ok(inventory);
-});
-admin.MapPut("/inventory/{variantId:guid}", async (HttpContext http, Guid variantId, UpdateInventoryRequest request, AdminCatalogService service, IOutputCacheStore outputCache, CancellationToken ct) =>
+}).RequireAuthorization(CommercePolicies.InventoryRead);
+admin.MapPut("/inventory/{variantId:guid}", async (HttpContext http, Guid variantId, UpdateInventoryRequest request, ApplicationUserResolver user, AdminCatalogService service, IOutputCacheStore outputCache, CancellationToken ct) =>
 {
-    EnsureAdmin(http, allowDevelopmentIdentity);
-    var inventory = await service.UpdateInventoryAsync(variantId, RequiredVersion(http), request, ct);
+    var inventory = await service.UpdateInventoryAsync(variantId, RequiredVersion(http), request, await user.GetRequiredUserIdAsync(ct), ct);
     await EvictPublicOutputAsync(outputCache, ct);
     http.Response.Headers.ETag = VersionEtag(inventory.Version);
     return Results.Ok(inventory);
-});
+}).RequireAuthorization(CommercePolicies.InventoryManage);
+
+var operations = admin.MapGroup("/operations");
+operations.MapGet("/dashboard", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetDashboardAsync(ct); }).RequireAuthorization(CommercePolicies.OperationsRead);
+operations.MapGet("/variants", async (HttpContext http, string? query, int? page, int? pageSize, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetVariantsAsync(query, page ?? 1, pageSize ?? 25, ct); }).RequireAuthorization(CommercePolicies.PricingRead);
+operations.MapGet("/pricing/{variantId:guid}", async (HttpContext http, Guid variantId, DateTimeOffset? from, DateTimeOffset? to, OperationsService service, CancellationToken ct) => { NoStore(http); var end = to ?? DateTimeOffset.UtcNow; return await service.GetPricingCurveAsync(variantId, from ?? end.AddDays(-90), end, ct); }).RequireAuthorization(CommercePolicies.PricingRead);
+operations.MapPost("/pricing/simulate", async (PriceSimulationRequest request, OperationsService service, CancellationToken ct) => await service.SimulatePriceAsync(request, ct)).RequireAuthorization(CommercePolicies.PricingRead);
+operations.MapPost("/pricing/schedules", async (PriceScheduleRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => Results.Created("/api/admin/operations/pricing", await service.SchedulePriceAsync(request, await user.GetRequiredUserIdAsync(ct), ct))).RequireAuthorization(CommercePolicies.PricingManage);
+operations.MapGet("/pricing/recommendations", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetPriceRecommendationsAsync(ct); }).RequireAuthorization(CommercePolicies.PricingRead);
+operations.MapPost("/pricing/{id:guid}/approve", async (Guid id, PriceApprovalRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.ApprovePricingAsync(id, await user.GetRequiredUserIdAsync(ct), ApprovalReason(request.Reason), ct)).RequireAuthorization(CommercePolicies.PricingApprove);
+operations.MapGet("/demand", async (HttpContext http, Guid? variantId, DateTimeOffset? from, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetDemandAsync(variantId, from ?? DateTimeOffset.UtcNow.AddDays(-90), ct); }).RequireAuthorization(CommercePolicies.DemandRead);
+operations.MapPost("/forecasts/generate", async (ForecastRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => Results.Created("/api/admin/operations/demand", await service.GenerateForecastAsync(request, await user.GetRequiredUserIdAsync(ct), ct))).RequireAuthorization(CommercePolicies.DemandManage);
+operations.MapGet("/inventory", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetInventoryAsync(ct); }).RequireAuthorization(CommercePolicies.InventoryRead);
+operations.MapPost("/inventory/adjustments", async (InventoryAdjustmentRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => Results.Created("/api/admin/operations/inventory", await service.AdjustInventoryAsync(request, await user.GetRequiredUserIdAsync(ct), ct))).RequireAuthorization(CommercePolicies.InventoryManage);
+operations.MapPost("/inventory/transfers", async (InventoryTransferRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.TransferInventoryAsync(request, await user.GetRequiredUserIdAsync(ct), ct)).RequireAuthorization(CommercePolicies.InventoryManage);
+operations.MapGet("/replenishment", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetReplenishmentAsync(ct); }).RequireAuthorization(CommercePolicies.ReplenishmentRead);
+operations.MapPost("/replenishment/generate", async (ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.GenerateReplenishmentAsync(await user.GetRequiredUserIdAsync(ct), ct)).RequireAuthorization(CommercePolicies.ReplenishmentManage);
+operations.MapPost("/replenishment/{id:guid}/approve", async (Guid id, PriceApprovalRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.ApproveReplenishmentAsync(id, await user.GetRequiredUserIdAsync(ct), ApprovalReason(request.Reason), ct)).RequireAuthorization(CommercePolicies.ReplenishmentManage);
+operations.MapGet("/promotions", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetPromotionsAsync(ct); }).RequireAuthorization(CommercePolicies.PromotionsRead);
+operations.MapPost("/promotions", async (PromotionRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => Results.Created("/api/admin/operations/promotions", await service.CreatePromotionAsync(request, await user.GetRequiredUserIdAsync(ct), ct))).RequireAuthorization(CommercePolicies.PromotionsManage);
+operations.MapPost("/promotions/{id:guid}/approve", async (Guid id, PriceApprovalRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.ApprovePromotionAsync(id, await user.GetRequiredUserIdAsync(ct), ApprovalReason(request.Reason), ct)).RequireAuthorization(CommercePolicies.PromotionsManage);
+operations.MapGet("/approvals", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetApprovalsAsync(ct); }).RequireAuthorization(CommercePolicies.OperationsRead);
+operations.MapGet("/audit", async (HttpContext http, int? pageSize, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetAuditAsync(pageSize ?? 100, ct); }).RequireAuthorization(CommercePolicies.OperationsAudit);
+operations.MapGet("/alerts", async (HttpContext http, OperationsService service, CancellationToken ct) => { NoStore(http); return await service.GetAlertsAsync(ct); }).RequireAuthorization(CommercePolicies.OperationsRead);
+operations.MapPost("/alerts/{id:guid}/acknowledge", async (Guid id, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.AcknowledgeAlertAsync(id, await user.GetRequiredUserIdAsync(ct), ct)).RequireAuthorization(CommercePolicies.OperationsRead);
+operations.MapPost("/bulk/prices/preview", async (BulkPriceRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.BulkPricesAsync(request, await user.GetRequiredUserIdAsync(ct), false, ct)).RequireAuthorization(CommercePolicies.PricingManage);
+operations.MapPost("/bulk/prices/apply", async (BulkPriceRequest request, ApplicationUserResolver user, OperationsService service, CancellationToken ct) => await service.BulkPricesAsync(request, await user.GetRequiredUserIdAsync(ct), true, ct)).RequireAuthorization(CommercePolicies.PricingManage);
 
 if (app.Environment.IsDevelopment() && app.Configuration.GetValue("APPLY_MIGRATIONS", false))
 {
@@ -280,30 +409,11 @@ static uint RequiredVersion(HttpContext context)
 }
 
 static string VersionEtag(string version) => $"\"{version}\"";
+static string ApprovalReason(string? reason) => string.IsNullOrWhiteSpace(reason) ? "Approved through the operations console." : reason.Trim()[..Math.Min(reason.Trim().Length, 500)];
 static async Task EvictPublicOutputAsync(IOutputCacheStore outputCache, CancellationToken cancellationToken)
 {
     await outputCache.EvictByTagAsync("public-products", cancellationToken);
     await outputCache.EvictByTagAsync("public-storefront", cancellationToken);
-}
-
-static void EnsureAdmin(HttpContext context, bool allowDevelopmentIdentity)
-{
-    var scopes = context.User.FindFirstValue("scope")?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
-    if (context.User.IsInRole("admin") || scopes.Contains("catalog.write", StringComparer.Ordinal)) return;
-    if (allowDevelopmentIdentity && string.Equals(context.Request.Headers["X-Admin"], "true", StringComparison.OrdinalIgnoreCase)) return;
-    throw new CommerceException("forbidden", "Catalog administrator access is required.", 403);
-}
-
-static string CustomerId(HttpContext context, bool allowDevelopmentIdentity)
-{
-    var subject = context.User.FindFirstValue("sub");
-    if (!string.IsNullOrWhiteSpace(subject))
-    {
-        if (subject.Length > 200) throw new CommerceException("invalid_identity", "The authenticated subject exceeds the supported identity length.", 401);
-        return subject;
-    }
-    if (allowDevelopmentIdentity && context.Request.Headers.TryGetValue("X-Customer-Id", out var values) && !string.IsNullOrWhiteSpace(values)) return values.ToString()[..Math.Min(values.ToString().Length, 200)];
-    throw new CommerceException("authentication_required", "Authentication is required.", 401);
 }
 
 public partial class Program;

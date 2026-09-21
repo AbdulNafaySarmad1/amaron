@@ -28,17 +28,30 @@ public sealed class AdminCatalogService(ICommerceDbContext db, IReadModelCache c
         return Map(product);
     }
 
-    public async Task<InventoryDto> UpdateInventoryAsync(Guid variantId, uint expectedVersion, UpdateInventoryRequest request, CancellationToken cancellationToken)
+    public async Task<InventoryDto> UpdateInventoryAsync(Guid variantId, uint expectedVersion, UpdateInventoryRequest request, string actor, CancellationToken cancellationToken)
     {
         if (request.QuantityOnHand is < 0 or > 1_000_000) throw CommerceErrors.Validation("Quantity on hand must be between 0 and 1,000,000.");
+        await using var transaction = await db.BeginTransactionAsync(cancellationToken);
+        await db.LockInventoryAsync([variantId], cancellationToken);
         var inventory = await db.Inventory.Include(x => x.Variant).ThenInclude(x => x.Product).SingleOrDefaultAsync(x => x.VariantId == variantId, cancellationToken)
             ?? throw CommerceErrors.NotFound("Inventory item");
         if (inventory.Version != expectedVersion) throw CommerceErrors.Conflict("concurrency_conflict", "Inventory changed since it was loaded. Refresh it and try again.");
 
+        var delta = request.QuantityOnHand - inventory.QuantityOnHand;
+        if (delta == 0) return new InventoryDto(inventory.VariantId, inventory.QuantityOnHand, inventory.Version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var stock = await db.WarehouseStocks.OrderBy(x => x.WarehouseId).FirstOrDefaultAsync(x => x.VariantId == variantId, cancellationToken);
+        if (stock is not null)
+        {
+            if (stock.OnHand + delta < stock.Reserved + stock.Unavailable) throw CommerceErrors.Conflict("insufficient_inventory", "The correction would reduce stock below reserved or unavailable units.");
+            stock.OnHand += delta; stock.UpdatedAt = clock.GetUtcNow();
+            db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variantId, WarehouseId = stock.WarehouseId, LocationId = stock.LocationId, QuantityDelta = delta, Reason = InventoryMovementReason.Correction, ReferenceType = "LegacyAdminInventory", ReferenceId = variantId.ToString(), CreatedBy = actor, CreatedAt = clock.GetUtcNow() });
+        }
+        db.OperationsAuditEntries.Add(new OperationsAuditEntry { Id = Guid.CreateVersion7(), EventType = "INVENTORY_CORRECTED", ResourceType = "InventoryItem", ResourceId = variantId.ToString(), ActorId = actor, BeforeJson = System.Text.Json.JsonSerializer.Serialize(new { inventory.QuantityOnHand }), AfterJson = System.Text.Json.JsonSerializer.Serialize(new { request.QuantityOnHand }), Reason = "Legacy inventory correction endpoint", CreatedAt = clock.GetUtcNow() });
         inventory.QuantityOnHand = request.QuantityOnHand;
         inventory.UpdatedAt = clock.GetUtcNow();
         try { await db.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { throw CommerceErrors.Conflict("concurrency_conflict", "Inventory changed while it was being updated. Refresh it and try again."); }
+        await transaction.CommitAsync(cancellationToken);
 
         await cache.RemoveByTagAsync($"inventory:{variantId}", CancellationToken.None);
         await InvalidateProductAsync(inventory.Variant.ProductId, inventory.Variant.Product.Slug, CancellationToken.None);

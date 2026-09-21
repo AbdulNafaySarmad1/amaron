@@ -1,0 +1,327 @@
+{
+  "realm": "commerce",
+  "displayName": "Commerce (local development)",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": false,
+  "rememberMe": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxTemporaryLockouts": 0,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "minimumQuickLoginWaitSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "passwordPolicy": "length(12) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined)",
+  "defaultSignatureAlgorithm": "RS256",
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeoutRememberMe": 604800,
+  "ssoSessionMaxLifespanRememberMe": 1209600,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": true,
+  "offlineSessionMaxLifespan": 5184000,
+  "clientSessionIdleTimeout": 0,
+  "clientSessionMaxLifespan": 0,
+  "webAuthnPolicyRpEntityName": "Commerce Local",
+  "webAuthnPolicyRpId": "localhost",
+  "webAuthnPolicySignatureAlgorithms": ["ES256", "RS256"],
+  "webAuthnPolicyAttestationConveyancePreference": "not specified",
+  "webAuthnPolicyAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyRequireResidentKey": "not specified",
+  "webAuthnPolicyUserVerificationRequirement": "preferred",
+  "webAuthnPolicyCreateTimeout": 0,
+  "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyAcceptableAaguids": [],
+  "webAuthnPolicyPasswordlessRpEntityName": "Commerce Local",
+  "webAuthnPolicyPasswordlessRpId": "localhost",
+  "webAuthnPolicyPasswordlessSignatureAlgorithms": ["ES256", "RS256"],
+  "webAuthnPolicyPasswordlessAttestationConveyancePreference": "not specified",
+  "webAuthnPolicyPasswordlessAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyPasswordlessRequireResidentKey": "required",
+  "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+  "webAuthnPolicyPasswordlessCreateTimeout": 0,
+  "webAuthnPolicyPasswordlessAvoidSameAuthenticatorRegister": false,
+  "webAuthnPolicyPasswordlessAcceptableAaguids": [],
+  "roles": {
+    "client": {
+      "commerce-api": [
+        {"name": "customer", "description": "Customer application role"},
+        {"name": "support-agent", "description": "Customer support application role"},
+        {"name": "catalog-view", "description": "Read administrative catalog data"},
+        {"name": "catalog-manage", "description": "Create and update catalog data"},
+        {"name": "inventory-view", "description": "Read inventory data"},
+        {"name": "inventory-manage", "description": "Update inventory"},
+        {"name": "orders-view-any", "description": "Read customer orders beyond the current subject"},
+        {"name": "orders-manage", "description": "Perform order management operations"},
+        {"name": "reviews-create", "description": "Create customer reviews"},
+        {"name": "reviews-moderate", "description": "Moderate customer reviews"},
+        {"name": "security-auditor", "description": "Read security audit data"},
+        {"name": "security-admin", "description": "Manage security configuration"},
+        {"name": "administration-access", "description": "Enter privileged administration surfaces"},
+        {"name": "operations-view", "description": "Read the operations dashboard and approval queue"},
+        {"name": "pricing-view", "description": "Read prices and pricing recommendations"},
+        {"name": "pricing-manage", "description": "Propose and schedule price changes"},
+        {"name": "pricing-approve", "description": "Approve governed price changes"},
+        {"name": "demand-view", "description": "Read observed demand and forecasts"},
+        {"name": "demand-manage", "description": "Generate demand forecasts"},
+        {"name": "replenishment-view", "description": "Read replenishment recommendations"},
+        {"name": "replenishment-manage", "description": "Generate and approve replenishment recommendations"},
+        {"name": "promotions-view", "description": "Read promotions"},
+        {"name": "promotions-manage", "description": "Propose and approve promotions"},
+        {"name": "operations-audit", "description": "Read the operational audit trail"}
+      ],
+      "admin-web": [
+        {"name": "support-access", "description": "Sign in to support administration"},
+        {"name": "catalog-access", "description": "Sign in to catalog administration"}
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "commerce-api",
+      "name": "Commerce API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false
+    },
+    {
+      "clientId": "storefront-web",
+      "name": "Storefront Web (local)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${STOREFRONT_CLIENT_SECRET}",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "fullScopeAllowed": true,
+      "rootUrl": "http://localhost:3000",
+      "baseUrl": "http://localhost:3000",
+      "redirectUris": ["http://localhost:3000/api/auth/callback"],
+      "webOrigins": ["http://localhost:3000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "commerce-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "commerce-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "commerce-api-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "commerce-api",
+            "claim.name": "role",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "admin-web",
+      "name": "Administration Web (local)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ADMIN_CLIENT_SECRET}",
+      "publicClient": false,
+      "bearerOnly": false,
+      "consentRequired": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "fullScopeAllowed": false,
+      "rootUrl": "http://localhost:3001",
+      "baseUrl": "http://localhost:3001",
+      "redirectUris": ["http://localhost:3001/auth/callback"],
+      "webOrigins": ["http://localhost:3001"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3001",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "access.token.lifespan": "180",
+        "client.session.idle.timeout": "900",
+        "client.session.max.lifespan": "28800",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "commerce-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "commerce-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "commerce-api-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "commerce-api",
+            "claim.name": "role",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "clientScopeMappings": {
+    "commerce-api": [
+      {
+        "client": "admin-web",
+        "roles": ["support-agent", "catalog-view", "catalog-manage", "inventory-view", "inventory-manage", "orders-view-any", "orders-manage", "reviews-moderate", "security-auditor", "security-admin", "administration-access", "operations-view", "pricing-view", "pricing-manage", "pricing-approve", "demand-view", "demand-manage", "replenishment-view", "replenishment-manage", "promotions-view", "promotions-manage", "operations-audit"]
+      }
+    ],
+    "admin-web": [
+      {
+        "client": "admin-web",
+        "roles": ["support-access", "catalog-access"]
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "Customers",
+      "clientRoles": {
+        "commerce-api": ["customer", "reviews-create"]
+      }
+    },
+    {
+      "name": "Operations",
+      "subGroups": [
+        {
+          "name": "Customer Support",
+          "clientRoles": {
+            "commerce-api": ["support-agent", "orders-view-any", "administration-access"],
+            "admin-web": ["support-access"]
+          }
+        },
+        {
+          "name": "Catalog Team",
+          "clientRoles": {
+            "commerce-api": ["catalog-view", "catalog-manage", "administration-access", "operations-view", "pricing-view", "pricing-manage", "pricing-approve", "demand-view", "demand-manage", "promotions-view", "promotions-manage", "operations-audit"],
+            "admin-web": ["catalog-access"]
+          }
+        },
+        {
+          "name": "Inventory Team",
+          "clientRoles": {
+            "commerce-api": ["inventory-view", "inventory-manage", "administration-access", "operations-view", "replenishment-view", "replenishment-manage"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security",
+      "subGroups": [
+        {
+          "name": "Auditors",
+          "clientRoles": {
+            "commerce-api": ["security-auditor", "administration-access", "operations-view", "operations-audit"]
+          }
+        },
+        {
+          "name": "Security Administrators",
+          "clientRoles": {
+            "commerce-api": ["security-auditor", "security-admin", "administration-access", "operations-view", "operations-audit"]
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "customer.dev",
+      "firstName": "Local",
+      "lastName": "Customer",
+      "email": "customer@localhost.invalid",
+      "enabled": true,
+      "emailVerified": true,
+      "groups": ["/Customers"],
+      "credentials": [
+        {"type": "password", "value": "${DEV_CUSTOMER_PASSWORD}", "temporary": false}
+      ]
+    },
+    {
+      "username": "support.dev",
+      "firstName": "Local",
+      "lastName": "Support",
+      "email": "support@localhost.invalid",
+      "enabled": true,
+      "emailVerified": true,
+      "groups": ["/Operations/Customer Support"],
+      "credentials": [
+        {"type": "password", "value": "${DEV_SUPPORT_PASSWORD}", "temporary": false}
+      ]
+    },
+    {
+      "username": "catalog.manager.dev",
+      "firstName": "Local",
+      "lastName": "Catalog Manager",
+      "email": "catalog-manager@localhost.invalid",
+      "enabled": true,
+      "emailVerified": true,
+      "groups": ["/Operations/Catalog Team"],
+      "credentials": [
+        {"type": "password", "value": "${DEV_CATALOG_MANAGER_PASSWORD}", "temporary": false}
+      ]
+    }
+  ]
+}

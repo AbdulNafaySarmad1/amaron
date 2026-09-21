@@ -8,7 +8,7 @@ import type { Order } from "@/lib/types";
 export function OrderList() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState(false);
-  useEffect(() => { browserRequest<Order[]>("/api/orders").then(setOrders).catch(() => setError(true)); }, []);
+  useEffect(() => { browserRequest<Order[]>("/api/bff/orders").then(setOrders).catch(() => setError(true)); }, []);
   if (error) return <div className="orders-state"><h2>We couldn&apos;t load your orders.</h2><p>Try refreshing the page.</p></div>;
   if (!orders) return <div className="orders-state"><p>Looking up your orders…</p></div>;
   if (!orders.length) return <div className="orders-state"><span>0</span><h2>No orders yet</h2><p>When you place one, you&apos;ll find every detail here.</p><Link className="button button--primary button--medium" href="/search">Browse goods</Link></div>;

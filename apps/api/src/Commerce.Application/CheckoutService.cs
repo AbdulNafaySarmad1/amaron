@@ -32,11 +32,13 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
         await db.LockInventoryAsync(variantIds, cancellationToken);
         var variants = await db.ProductVariants.Include(v => v.Product).Include(v => v.Inventory)
             .Where(v => variantIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id, cancellationToken);
+        var warehouseStocks = await db.WarehouseStocks.Where(x => variantIds.Contains(x.VariantId)).OrderBy(x => x.WarehouseId).ToListAsync(cancellationToken);
         if (variants.Count != variantIds.Length) throw CommerceErrors.Conflict("product_unavailable", "A cart item is no longer available.");
 
         var currencies = variants.Values.Select(v => v.Currency).Distinct(StringComparer.Ordinal).ToArray();
         if (currencies.Length != 1) throw CommerceErrors.Conflict("mixed_currency", "All cart items must use one currency.");
 
+        var now = clock.GetUtcNow();
         foreach (var item in cart.Items)
         {
             var variant = variants[item.VariantId];
@@ -44,7 +46,6 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
             if (variant.Inventory.QuantityOnHand < item.Quantity) throw CommerceErrors.Conflict("insufficient_inventory", $"Insufficient inventory for {variant.Product.Title}.");
         }
 
-        var now = clock.GetUtcNow();
         var order = new Order
         {
             Id = Guid.CreateVersion7(),
@@ -66,7 +67,20 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
             var variant = variants[cartItem.VariantId];
             variant.Inventory.QuantityOnHand -= cartItem.Quantity;
             variant.Inventory.UpdatedAt = now;
-            order.Items.Add(new OrderItem { Id = Guid.CreateVersion7(), OrderId = order.Id, VariantId = variant.Id, Sku = variant.Sku, ProductTitle = variant.Product.Title, VariantName = variant.Name, UnitPrice = variant.Price, Quantity = cartItem.Quantity, LineTotal = variant.Price * cartItem.Quantity });
+            var remaining = cartItem.Quantity;
+            var variantStocks = warehouseStocks.Where(x => x.VariantId == variant.Id).ToList();
+            foreach (var stock in variantStocks)
+            {
+                var available = OperationsCalculations.AvailableToSell(stock.OnHand, stock.Reserved, stock.SafetyStock, stock.Unavailable);
+                var fulfilled = Math.Min(available, remaining);
+                if (fulfilled == 0) continue;
+                stock.OnHand -= fulfilled; stock.UpdatedAt = now; remaining -= fulfilled;
+                db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = stock.WarehouseId, LocationId = stock.LocationId, QuantityDelta = -fulfilled, Reason = InventoryMovementReason.OrderFulfilled, ReferenceType = "Order", ReferenceId = order.Id.ToString(), CreatedBy = "checkout", CreatedAt = now });
+                if (remaining == 0) break;
+            }
+            if (variantStocks.Count > 0 && remaining > 0) throw CommerceErrors.Conflict("insufficient_available_stock", $"Insufficient available warehouse stock for {variant.Product.Title}.");
+            var unitPrice = variant.Price;
+            order.Items.Add(new OrderItem { Id = Guid.CreateVersion7(), OrderId = order.Id, VariantId = variant.Id, Sku = variant.Sku, ProductTitle = variant.Product.Title, VariantName = variant.Name, UnitPrice = unitPrice, Quantity = cartItem.Quantity, LineTotal = unitPrice * cartItem.Quantity });
         }
         order.Subtotal = order.Items.Sum(x => x.LineTotal);
         db.Orders.Add(order);
@@ -80,23 +94,25 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
         return new CheckoutResultDto(MapOrder(order), false);
     }
 
-    public async Task<OrderDto> GetOrderAsync(string customerId, Guid id, CancellationToken cancellationToken)
+    public async Task<OrderDto> GetOrderAsync(string customerId, Guid id, bool canReadAny, CancellationToken cancellationToken)
     {
-        var order = await db.Orders.AsNoTracking().Include(o => o.Items).SingleOrDefaultAsync(o => o.Id == id && o.CustomerId == customerId, cancellationToken);
+        var order = await db.Orders.AsNoTracking().Include(o => o.Items).SingleOrDefaultAsync(o => o.Id == id && (canReadAny || o.CustomerId == customerId), cancellationToken);
         return order is null ? throw CommerceErrors.NotFound("Order") : MapOrder(order);
     }
 
-    public async Task<IReadOnlyList<OrderDto>> GetOrdersAsync(string customerId, int pageSize, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<OrderDto>> GetOrdersAsync(string customerId, int pageSize, bool canReadAny, CancellationToken cancellationToken)
     {
         if (pageSize is < 1 or > 50) throw CommerceErrors.Validation("pageSize must be between 1 and 50.");
-        var orders = await db.Orders.AsNoTracking().Include(o => o.Items).Where(o => o.CustomerId == customerId).OrderByDescending(o => o.CreatedAt).ThenByDescending(o => o.Id).Take(pageSize).ToListAsync(cancellationToken);
+        var query = db.Orders.AsNoTracking().Include(o => o.Items).AsQueryable();
+        if (!canReadAny) query = query.Where(o => o.CustomerId == customerId);
+        var orders = await query.OrderByDescending(o => o.CreatedAt).ThenByDescending(o => o.Id).Take(pageSize).ToListAsync(cancellationToken);
         return orders.Select(MapOrder).ToList();
     }
 
     private async Task<CheckoutResultDto> ReplayAsync(IdempotencyRecord record, string hash, string customerId, CancellationToken cancellationToken)
     {
         if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(record.RequestHash), Convert.FromHexString(hash))) throw CommerceErrors.Conflict("idempotency_key_reused", "The idempotency key was already used with a different request.");
-        return new CheckoutResultDto(await GetOrderAsync(customerId, record.OrderId, cancellationToken), true);
+        return new CheckoutResultDto(await GetOrderAsync(customerId, record.OrderId, false, cancellationToken), true);
     }
 
     private static OrderDto MapOrder(Order order) => new(order.Id, order.OrderNumber, order.Status.ToString(), new MoneyDto(order.Subtotal, order.Currency), order.CreatedAt,

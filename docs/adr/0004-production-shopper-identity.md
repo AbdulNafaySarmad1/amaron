@@ -1,14 +1,14 @@
 # Production shopper identity
 
-Status: Proposed
+Status: Superseded by ADR 013
 
 ## Context
 
-The API validates JWT bearer identity in production and accepts `X-Customer-Id` only in explicitly enabled Development. The current storefront is a development demonstration and does not acquire or propagate production credentials.
+At the time of this decision, the API could validate JWT bearer identity but the storefront did not acquire or propagate production credentials. `X-Customer-Id` was limited to explicitly enabled Development.
 
 ## Decision
 
-Before production use, choose and implement one identity topology: direct browser-to-API bearer tokens or a same-origin Next.js backend-for-frontend session. Until then, production private cart, checkout, and order flows are not claimed as deployable. The storefront sends the development identity header only when `NEXT_PUBLIC_DEMO_CUSTOMER_ID` is explicitly configured.
+This ADR recorded the requirement to choose a production identity topology rather than ship a shared browser-supplied identity. ADR 013 made that choice and implemented a same-origin OIDC BFF with Keycloak.
 
 ## Alternatives Considered
 
@@ -29,16 +29,16 @@ Token storage, refresh, CSRF, SSR identity propagation, and deployment origin ar
 
 ## Costs And Trade-offs
 
-- Private storefront flows require Development configuration today.
-- Production launch remains blocked on an identity decision.
+- Private storefront flows required Development configuration until ADR 013.
+- Production launch was blocked on an identity decision.
 
 ## Consistency Guarantees
 
-Customer identity comes from validated JWT `sub` in production and is bounded to the persisted 200-character key. Browser-supplied prices, totals, inventory, and customer IDs remain untrusted.
+The superseding design maps validated `(issuer, sub)` to an application-owned identifier. Browser-supplied prices, totals, inventory, and customer IDs remain untrusted.
 
 ## Failure And Degradation Behavior
 
-Without a production credential, private endpoints return 401; the storefront must not fall back to a shared customer identity. Public catalog browsing remains available.
+Without a valid production credential, private endpoints return 401; the storefront does not fall back to a shared customer identity. Public catalog browsing remains available.
 
 ## Reconsider When
 

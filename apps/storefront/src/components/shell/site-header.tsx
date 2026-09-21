@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { FormEvent, KeyboardEvent, startTransition, useDeferredValue, useEffect, useState } from "react";
 import { CartIcon, SearchIcon } from "@/components/icons";
+import { useStorefrontSession } from "@/components/providers/storefront-provider";
 import { commerceCopy } from "@/content/commerce";
 import { browserRequest } from "@/lib/api";
 import { motionTokens } from "@/lib/motion";
@@ -13,6 +14,7 @@ import { useCartStore } from "@/store/cart-store";
 
 export function SiteHeader({ categories }: { categories: Category[] }) {
   const router = useRouter();
+  const session = useStorefrontSession();
   const openCart = useCartStore((state) => state.open);
   const cartCount = useCartStore((state) => state.cart?.totalQuantity ?? 0);
   const [query, setQuery] = useState("");
@@ -24,7 +26,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
   useEffect(() => {
     if (deferredQuery.trim().length < 2) return;
     const controller = new AbortController();
-    browserRequest<Suggestion[]>(`/api/search/suggestions?q=${encodeURIComponent(deferredQuery.trim())}`, { signal: controller.signal })
+    browserRequest<Suggestion[]>(`/api/public/search/suggestions?q=${encodeURIComponent(deferredQuery.trim())}`, { signal: controller.signal })
       .then(setSuggestions)
       .catch((error) => { if (error instanceof DOMException && error.name === "AbortError") return; setSuggestions([]); });
     return () => controller.abort();
@@ -53,6 +55,10 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
   }
 
   const showSuggestions = focused && query.length >= 2;
+  async function logout() {
+    const result = await browserRequest<{ logoutUrl: string }>("/api/auth/logout", { method: "POST" });
+    window.location.assign(result.logoutUrl);
+  }
   return (
     <header className="site-header">
       <div className="site-header__inner">
@@ -60,7 +66,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
         <nav className="primary-nav" aria-label="Primary navigation">
           {categories.slice(0, 4).map((category) => <Link key={category.id} href={`/search?category=${category.slug}`}>{category.name}</Link>)}
           <Link href="/search">All goods</Link>
-          <Link href="/orders">Orders</Link>
+          {session.authenticated ? <Link href="/orders">Orders</Link> : null}
         </nav>
         <form className="header-search" role="search" onSubmit={submit}>
           <SearchIcon />
@@ -78,9 +84,9 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
             ) : null}
           </AnimatePresence>
         </form>
-        <button className="cart-trigger" type="button" onClick={() => void openCart()} aria-label={`Open cart with ${cartCount} items`}>
-          <CartIcon /><span>Cart</span><motion.b key={cartCount} initial={{ scale: 0.72 }} animate={{ scale: 1 }} transition={motionTokens.spring.tactile}>{cartCount}</motion.b>
-        </button>
+        <div className="header-account">
+          {session.authenticated ? <><span>Hello, {session.user.name ?? "there"}</span><Link className="text-button" href="/api/auth/account">Profile</Link><button className="text-button" type="button" onClick={() => void logout()}>Sign out</button><button className="cart-trigger" type="button" onClick={() => void openCart()} aria-label={`Open cart with ${cartCount} items`}><CartIcon /><span>Cart</span><motion.b key={cartCount} initial={{ scale: 0.72 }} animate={{ scale: 1 }} transition={motionTokens.spring.tactile}>{cartCount}</motion.b></button></> : <Link className="button button--primary button--small" href="/api/auth/login?returnTo=/">Sign in</Link>}
+        </div>
       </div>
     </header>
   );

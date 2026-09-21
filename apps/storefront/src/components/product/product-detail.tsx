@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
+import { useStorefrontSession } from "@/components/providers/storefront-provider";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
@@ -15,6 +17,8 @@ import { useCartStore } from "@/store/cart-store";
 
 export function ProductDetailView({ data }: { data: StorefrontProduct }) {
   const { product, recommendations } = data;
+  const session = useStorefrontSession();
+  const router = useRouter();
   const [variantId, setVariantId] = useState(product.variants.find((variant) => variant.availabilityHint !== "out_of_stock")?.id ?? product.variants[0]?.id ?? "");
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const add = useCartStore((store) => store.add);
@@ -24,6 +28,10 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
 
   async function addSelected() {
     if (!selected || unavailable) return;
+    if (!session.authenticated) {
+      router.push(`/api/auth/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     setState("loading");
     try {
       await add(selected.id);
