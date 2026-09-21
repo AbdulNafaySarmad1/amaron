@@ -37,6 +37,10 @@ var authority = builder.Configuration["AUTH_AUTHORITY"]?.TrimEnd('/');
 var audience = builder.Configuration["AUTH_AUDIENCE"] ?? "commerce-api";
 if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(authority))
     throw new InvalidOperationException("AUTH_AUTHORITY is required outside Development.");
+var publicHosts = (builder.Configuration["PUBLIC_HOSTS"] ?? "localhost;127.0.0.1").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+if (!builder.Environment.IsDevelopment() && (publicHosts.Length == 0 || publicHosts.Contains("*")))
+    throw new InvalidOperationException("PUBLIC_HOSTS must explicitly list production hosts.");
+builder.Services.AddHostFiltering(options => { options.AllowedHosts.Clear(); foreach (var host in publicHosts) options.AllowedHosts.Add(host); });
 var trustedProxies = (builder.Configuration["TRUSTED_PROXY_IPS"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(IPAddress.Parse).ToArray();
 if (trustedProxies.Length > 0)
 {
@@ -160,7 +164,7 @@ builder.Services.AddRateLimiter(options =>
 });
 var frontendOrigins = (builder.Configuration["FRONTEND_ORIGINS"] ?? builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:3000")
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy.WithOrigins(frontendOrigins).WithHeaders("Accept", "Content-Type", "Authorization", "Idempotency-Key", "If-Match", "If-None-Match").WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")));
+builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy.WithOrigins(frontendOrigins).WithHeaders("Accept", "Content-Type", "Authorization", "Idempotency-Key", "If-Match", "If-None-Match", "X-CSRF-Token").WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS").SetPreflightMaxAge(TimeSpan.FromMinutes(10))));
 
 var authentication = builder.Services.AddAuthentication(options =>
 {
@@ -221,6 +225,7 @@ if (!string.IsNullOrWhiteSpace(authority))
 builder.Services.AddAuthorization(options => options.AddCommercePolicies());
 
 var app = builder.Build();
+app.UseHostFiltering();
 if (trustedProxies.Length > 0) app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
@@ -248,6 +253,9 @@ app.Use(async (context, next) =>
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers.XFrameOptions = "DENY";
     context.Response.Headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
+    context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-site";
     if (HttpMethods.IsGet(context.Request.Method) &&
         (context.Request.Path.StartsWithSegments("/api/catalog") || context.Request.Path.StartsWithSegments("/api/storefront")) &&
         !context.Request.Path.StartsWithSegments("/api/storefront/cart-summary"))

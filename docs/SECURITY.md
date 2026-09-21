@@ -23,3 +23,6 @@ Tests cover local JWT rejection for expiry, issuer, audience, and signature; rol
 Production requires hardened HA OIDC and Redis deployments, TLS, managed and rotated secrets, persistent provider/database state, restricted administration, backup/restore, audit retention, alerting, canonical URL/proxy validation, and tested key/session/outage procedures. The imported `start-dev` realm, users, and Compose fallback credentials are local fixtures, not evidence of production readiness.
 
 Checkout persists recipient and shipping-address fields in PostgreSQL. A production deployment must define access, retention, deletion, and data-subject handling before collecting real customer information.
+# Application Security
+
+See `THREAT_MODEL.md`, `EDGE_SECURITY.md`, `OWASP_MAPPING.md`, and `INCIDENT_RESPONSE.md` for current controls, verification status, and infrastructure requirements.
