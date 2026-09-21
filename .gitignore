@@ -11,6 +11,4 @@
 TestResults/
 *.user
 *.suo
-.agent-logs/
-.opencode/
 graphify-out/
