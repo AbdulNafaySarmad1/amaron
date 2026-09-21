@@ -36,7 +36,8 @@ export type CartItem = { variantId: string; productId: string; slug: string; tit
 export type Cart = { cartId: string; totalQuantity: number; subtotal: Money; items: CartItem[]; version: string };
 export type CartMutation = Omit<Cart, "items"> & { changedItem: CartItem | null };
 export type Order = { id: string; orderNumber: string; status: string; subtotal: Money; createdAt: string; items: Array<{ variantId: string; sku: string; productTitle: string; variantName: string; quantity: number; unitPrice: Money; lineTotal: Money }> };
-export type CheckoutResult = { order: Order; idempotencyReplayed: boolean };
+export type Payment = { id: string; orderId: string; customerId: string | null; authorized: Money; captured: Money; refunded: Money; status: string; provider: string; providerReference: string | null; method: string; createdAt: string; updatedAt: string; expiresAt: string; attempts: Array<{ id: string; provider: string; providerReference: string | null; amount: Money; method: string; status: string; failureCategory: string | null; authenticationRequired: boolean }> };
+export type CheckoutResult = { order: Order; payment: Payment; idempotencyReplayed: boolean };
 export type ShippingAddress = { recipient: string; line1: string; line2?: string; city: string; region: string; postalCode: string; countryCode: string };
 
 export type AuthSession = { authenticated: false } | { authenticated: true; csrfToken: string; user: { name?: string } };

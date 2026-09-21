@@ -70,6 +70,11 @@ public sealed class DevelopmentIdentityHandler(
                 new(CommerceClaims.Permission, CommercePermissions.CycleCountsReconcile),
                 new(CommerceClaims.Permission, CommercePermissions.StockTransfersView),
                 new(CommerceClaims.Permission, CommercePermissions.StockTransfersManage),
+                new(CommerceClaims.Permission, CommercePermissions.PaymentsView),
+                new(CommerceClaims.Permission, CommercePermissions.PaymentsRefund),
+                new(CommerceClaims.Permission, CommercePermissions.PaymentsRefundLarge),
+                new(CommerceClaims.Permission, CommercePermissions.PaymentsCapture),
+                new(CommerceClaims.Permission, CommercePermissions.PaymentsReconcile),
                 new(CommerceClaims.Permission, CommercePermissions.AdministrationAccess)
             ]);
         }

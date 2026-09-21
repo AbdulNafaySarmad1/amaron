@@ -27,10 +27,22 @@ public sealed record SetCartItemRequest(Guid VariantId, int Quantity);
 public sealed record CartMutationDto(Guid CartId, int TotalQuantity, MoneyDto Subtotal, CartItemDto? ChangedItem, string Version);
 
 public sealed record AddressRequest(string Recipient, string Line1, string? Line2, string City, string Region, string PostalCode, string CountryCode);
-public sealed record CheckoutRequest(AddressRequest ShippingAddress);
+public sealed record PaymentMethodRequest(string Method, string? Provider = null, string? PaymentMethodToken = null, int? InstallmentCount = null);
+public sealed record CheckoutRequest(AddressRequest ShippingAddress, PaymentMethodRequest? PaymentMethod = null);
 public sealed record OrderItemDto(Guid VariantId, string Sku, string ProductTitle, string VariantName, int Quantity, MoneyDto UnitPrice, MoneyDto LineTotal);
 public sealed record OrderDto(Guid Id, string OrderNumber, string Status, MoneyDto Subtotal, DateTimeOffset CreatedAt, IReadOnlyList<OrderItemDto> Items);
-public sealed record CheckoutResultDto(OrderDto Order, bool IdempotencyReplayed);
+public sealed record PaymentAttemptDto(Guid Id, string Provider, string? ProviderReference, MoneyDto Amount, string Method, string Status, string? FailureCategory, bool AuthenticationRequired, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
+public sealed record PaymentDto(Guid Id, Guid OrderId, string? CustomerId, MoneyDto Authorized, MoneyDto Captured, MoneyDto Refunded, string Status, string Provider, string? ProviderReference, string Method, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset ExpiresAt, IReadOnlyList<PaymentAttemptDto> Attempts);
+public sealed record CheckoutResultDto(OrderDto Order, PaymentDto Payment, bool IdempotencyReplayed);
+public sealed record ConfirmPaymentRequest(string? PaymentMethodToken = null);
+public sealed record CapturePaymentRequest(decimal? Amount, string Reason);
+public sealed record RefundRequest(decimal Amount, string Reason);
+public sealed record RefundDto(Guid Id, Guid PaymentId, Guid OrderId, MoneyDto Amount, string Reason, string Status, string? ProviderRefundReference, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
+public sealed record PaymentProviderCapabilityDto(string Provider, bool SupportsAuthorization, bool SupportsManualCapture, bool SupportsPartialCapture, bool SupportsPartialRefund, bool SupportsInstallments, bool SupportsSavedMethods, bool Supports3Ds, bool SupportsAsyncPayments, IReadOnlyList<string> Methods);
+public sealed record InstallmentQuoteRequest(Guid OrderId, int InstallmentCount, string Provider = "test");
+public sealed record InstallmentPlanDto(Guid Id, Guid PaymentId, string Provider, string? ProviderPlanId, MoneyDto Total, int InstallmentCount, string Frequency, MoneyDto CustomerCost, MoneyDto? MerchantCost, string Status, string TermsReference, IReadOnlyList<InstallmentScheduleDto> Schedule);
+public sealed record InstallmentScheduleDto(int Sequence, DateTimeOffset DueDate, MoneyDto Amount, string Status, DateTimeOffset? PaidAt);
+public sealed record ReconciliationDto(Guid Id, Guid PaymentId, string Provider, string Status, MoneyDto ProviderCaptured, MoneyDto ProviderRefunded, string? Detail, DateTimeOffset EvaluatedAt);
 
 public sealed record OperationsMetricDto(string Label, decimal? Value, string Unit, string? Note = null);
 public sealed record OperationsDashboardDto(

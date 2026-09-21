@@ -31,6 +31,8 @@ const privateProxyRules: readonly ProxyRule[] = [
   { methods: ["PUT"], pattern: /^\/cart\/items$/ },
   { methods: ["DELETE"], pattern: /^\/cart\/items\/[^/]+$/ },
   { methods: ["POST"], pattern: /^\/checkout\/confirm$/ },
+  { methods: ["GET"], pattern: /^\/payments\/[^/]+$/ },
+  { methods: ["POST"], pattern: /^\/payments\/[^/]+\/confirm$/ },
   { methods: ["GET"], pattern: /^\/orders$/ },
   { methods: ["GET"], pattern: /^\/orders\/[^/]+$/ },
 ];

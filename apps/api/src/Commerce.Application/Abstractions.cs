@@ -60,6 +60,14 @@ public interface ICommerceDbContext
     DbSet<CycleCountLine> CycleCountLines { get; }
     DbSet<StockTransfer> StockTransfers { get; }
     DbSet<StockTransferLine> StockTransferLines { get; }
+    DbSet<Payment> Payments { get; }
+    DbSet<PaymentAttempt> PaymentAttempts { get; }
+    DbSet<Refund> Refunds { get; }
+    DbSet<PaymentWebhookEvent> PaymentWebhookEvents { get; }
+    DbSet<PaymentReconciliation> PaymentReconciliations { get; }
+    DbSet<InstallmentPlan> InstallmentPlans { get; }
+    DbSet<InstallmentSchedule> InstallmentSchedules { get; }
+    DbSet<OrderInventoryReservation> OrderInventoryReservations { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
     Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
     Task LockCartAsync(Guid cartId, CancellationToken cancellationToken);
@@ -71,6 +79,9 @@ public interface ICommerceDbContext
     Task LockCycleCountAsync(Guid cycleCountId, CancellationToken cancellationToken);
     Task LockStockTransferAsync(Guid stockTransferId, CancellationToken cancellationToken);
     Task LockStockTransferIdempotencyAsync(string key, CancellationToken cancellationToken);
+    Task LockPaymentAsync(Guid paymentId, CancellationToken cancellationToken);
+    Task LockPaymentIdempotencyAsync(string key, CancellationToken cancellationToken);
+    void ClearTracking();
 }
 
 public interface IReadModelCache

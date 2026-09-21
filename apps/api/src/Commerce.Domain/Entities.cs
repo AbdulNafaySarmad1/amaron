@@ -2,7 +2,7 @@ namespace Commerce.Domain;
 
 public enum ProductStatus { Draft, Active, Archived }
 public enum AssetType { PrimaryImage, GalleryImage, Thumbnail, Model3D, Poster }
-public enum OrderStatus { Placed, Cancelled }
+public enum OrderStatus { PendingPayment, Confirmed, Placed, Cancelled }
 public enum PriceKind { Regular, Promotion, Markdown }
 public enum OperationalStatus { Proposed, ReviewRequired, Approved, Rejected, Scheduled, Applied, Expired }
 public enum ForecastModel { Naive, MovingAverage, ExponentialSmoothing }

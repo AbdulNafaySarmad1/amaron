@@ -56,6 +56,14 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
     public DbSet<CycleCountLine> CycleCountLines => Set<CycleCountLine>();
     public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
     public DbSet<StockTransferLine> StockTransferLines => Set<StockTransferLine>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentAttempt> PaymentAttempts => Set<PaymentAttempt>();
+    public DbSet<Refund> Refunds => Set<Refund>();
+    public DbSet<PaymentWebhookEvent> PaymentWebhookEvents => Set<PaymentWebhookEvent>();
+    public DbSet<PaymentReconciliation> PaymentReconciliations => Set<PaymentReconciliation>();
+    public DbSet<InstallmentPlan> InstallmentPlans => Set<InstallmentPlan>();
+    public DbSet<InstallmentSchedule> InstallmentSchedules => Set<InstallmentSchedule>();
+    public DbSet<OrderInventoryReservation> OrderInventoryReservations => Set<OrderInventoryReservation>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -150,6 +158,7 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
         model.Entity<OperationsAuditEntry>(e => { e.ToTable("operations_audit"); e.HasKey(x => x.Id); e.Property(x => x.EventType).HasMaxLength(80); e.Property(x => x.ResourceType).HasMaxLength(80); e.Property(x => x.ResourceId).HasMaxLength(120); e.Property(x => x.ActorId).HasMaxLength(64); e.Property(x => x.BeforeJson).HasColumnType("jsonb"); e.Property(x => x.AfterJson).HasColumnType("jsonb"); e.Property(x => x.Reason).HasMaxLength(500); e.HasIndex(x => new { x.ResourceType, x.ResourceId, x.CreatedAt }); e.HasIndex(x => x.CreatedAt); });
         model.ConfigureSupplyChain();
         model.ConfigureWarehouseExecution();
+        model.ConfigurePayments();
     }
 
     public async Task<IApplicationTransaction> BeginTransactionAsync(CancellationToken cancellationToken) => new ApplicationTransaction(await Database.BeginTransactionAsync(cancellationToken));
@@ -162,6 +171,9 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
     public Task LockCycleCountAsync(Guid cycleCountId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM cycle_counts WHERE \"Id\" = {cycleCountId} FOR UPDATE", cancellationToken);
     public Task LockStockTransferAsync(Guid stockTransferId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM stock_transfers WHERE \"Id\" = {stockTransferId} FOR UPDATE", cancellationToken);
     public Task LockStockTransferIdempotencyAsync(string key, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 6208462303))", cancellationToken);
+    public Task LockPaymentAsync(Guid paymentId, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM payments WHERE \"Id\" = {paymentId} FOR UPDATE", cancellationToken);
+    public Task LockPaymentIdempotencyAsync(string key, CancellationToken cancellationToken) => Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 6208462304))", cancellationToken);
+    public void ClearTracking() => ChangeTracker.Clear();
 
     private sealed class ApplicationTransaction(IDbContextTransaction transaction) : IApplicationTransaction
     {

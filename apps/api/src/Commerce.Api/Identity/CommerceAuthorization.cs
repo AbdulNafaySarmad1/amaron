@@ -54,6 +54,11 @@ public static class CommercePermissions
     public const string CycleCountsReconcile = "cycle-counts-reconcile";
     public const string StockTransfersView = "stock-transfers-view";
     public const string StockTransfersManage = "stock-transfers-manage";
+    public const string PaymentsView = "payments-view";
+    public const string PaymentsRefund = "payments-refund";
+    public const string PaymentsRefundLarge = "payments-refund-large";
+    public const string PaymentsCapture = "payments-capture";
+    public const string PaymentsReconcile = "payments-reconcile";
 }
 
 public static class CommercePolicies
@@ -99,6 +104,11 @@ public static class CommercePolicies
     public const string CycleCountsReconcile = "CycleCounts.Reconcile";
     public const string StockTransfersRead = "StockTransfers.Read";
     public const string StockTransfersManage = "StockTransfers.Manage";
+    public const string PaymentsRead = "Payments.Read";
+    public const string PaymentsRefund = "Payments.Refund";
+    public const string PaymentsRefundLarge = "Payments.RefundLarge";
+    public const string PaymentsCapture = "Payments.Capture";
+    public const string PaymentsReconcile = "Payments.Reconcile";
 
     public static void AddCommercePolicies(this AuthorizationOptions options)
     {
@@ -146,6 +156,11 @@ public static class CommercePolicies
         options.AddPolicy(CycleCountsReconcile, policy => Permission(policy, CommercePermissions.CycleCountsReconcile));
         options.AddPolicy(StockTransfersRead, policy => Permission(policy, CommercePermissions.StockTransfersView));
         options.AddPolicy(StockTransfersManage, policy => Permission(policy, CommercePermissions.StockTransfersManage));
+        options.AddPolicy(PaymentsRead, policy => Permission(policy, CommercePermissions.PaymentsView));
+        options.AddPolicy(PaymentsRefund, policy => Permission(policy, CommercePermissions.PaymentsRefund));
+        options.AddPolicy(PaymentsRefundLarge, policy => Permission(policy, CommercePermissions.PaymentsRefundLarge));
+        options.AddPolicy(PaymentsCapture, policy => Permission(policy, CommercePermissions.PaymentsCapture));
+        options.AddPolicy(PaymentsReconcile, policy => Permission(policy, CommercePermissions.PaymentsReconcile));
     }
 }
 

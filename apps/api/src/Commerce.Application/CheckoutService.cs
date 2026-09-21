@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Commerce.Application;
 
-public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache, TimeProvider clock)
+public sealed class CheckoutService(ICommerceDbContext db, TimeProvider clock)
 {
     public async Task<CheckoutResultDto> ConfirmAsync(string customerId, string idempotencyKey, CheckoutRequest request, CancellationToken cancellationToken)
     {
@@ -51,7 +51,7 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
             Id = Guid.CreateVersion7(),
             OrderNumber = $"AM-{now:yyyyMMdd}-{Guid.NewGuid():N}"[..20].ToUpperInvariant(),
             CustomerId = customerId,
-            Status = OrderStatus.Placed,
+            Status = OrderStatus.Confirmed,
             Currency = currencies[0],
             CreatedAt = now,
             Recipient = request.ShippingAddress.Recipient.Trim(),
@@ -65,8 +65,6 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
         foreach (var cartItem in cart.Items)
         {
             var variant = variants[cartItem.VariantId];
-            variant.Inventory.QuantityOnHand -= cartItem.Quantity;
-            variant.Inventory.UpdatedAt = now;
             var remaining = cartItem.Quantity;
             var variantStocks = warehouseStocks.Where(x => x.VariantId == variant.Id).ToList();
             foreach (var stock in variantStocks)
@@ -75,9 +73,8 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
                 var fulfilled = Math.Min(available, remaining);
                 if (fulfilled == 0) continue;
                 var consumed = await InventoryBalanceOperations.ConsumeAvailableAsync(db, stock, fulfilled, now, cancellationToken);
-                stock.OnHand -= fulfilled; stock.UpdatedAt = now; remaining -= fulfilled;
-                foreach (var allocation in consumed)
-                    db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = stock.WarehouseId, LocationId = allocation.Balance.LocationId, LotId = allocation.Balance.LotId, State = InventoryState.Available, QuantityDelta = -allocation.Quantity, Reason = InventoryMovementReason.OrderFulfilled, ReferenceType = "Order", ReferenceId = order.Id.ToString(), CreatedBy = "checkout", CreatedAt = now });
+                stock.OnHand -= fulfilled; stock.UpdatedAt = now; remaining -= fulfilled; variant.Inventory.QuantityOnHand -= fulfilled; variant.Inventory.UpdatedAt = now;
+                foreach (var allocation in consumed) db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = stock.WarehouseId, LocationId = allocation.Balance.LocationId, LotId = allocation.Balance.LotId, State = InventoryState.Available, QuantityDelta = -allocation.Quantity, Reason = InventoryMovementReason.OrderFulfilled, ReferenceType = "Order", ReferenceId = order.Id.ToString(), CreatedBy = "checkout", CreatedAt = now });
                 if (remaining == 0) break;
             }
             if (variantStocks.Count > 0 && remaining > 0) throw CommerceErrors.Conflict("insufficient_available_stock", $"Insufficient available warehouse stock for {variant.Product.Title}.");
@@ -85,15 +82,18 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
             order.Items.Add(new OrderItem { Id = Guid.CreateVersion7(), OrderId = order.Id, VariantId = variant.Id, Sku = variant.Sku, ProductTitle = variant.Product.Title, VariantName = variant.Name, UnitPrice = unitPrice, Quantity = cartItem.Quantity, LineTotal = unitPrice * cartItem.Quantity });
         }
         order.Subtotal = order.Items.Sum(x => x.LineTotal);
+        var method = request.PaymentMethod ?? new PaymentMethodRequest("Card", "test", null);
+        if (!Enum.TryParse<PaymentMethodType>(method.Method, true, out var methodType)) throw CommerceErrors.Validation("The selected payment method is invalid.");
+        var provider = string.IsNullOrWhiteSpace(method.Provider) ? "test" : method.Provider.Trim().ToLowerInvariant();
+        var payment = new Payment { Id = Guid.CreateVersion7(), OrderId = order.Id, CustomerId = customerId, Currency = order.Currency, AmountAuthorized = order.Subtotal, AmountCaptured = methodType == PaymentMethodType.CashOnDelivery ? 0 : order.Subtotal, Status = methodType == PaymentMethodType.CashOnDelivery ? PaymentStatus.PendingCollection : PaymentStatus.Captured, Provider = provider, ProviderPaymentReference = $"tp_{idempotencyKey}", PaymentMethodType = methodType, CreatedAt = now, UpdatedAt = now, ExpiresAt = now.AddMinutes(30) };
+        if (methodType != PaymentMethodType.CashOnDelivery) payment.Attempts.Add(new PaymentAttempt { Id = Guid.CreateVersion7(), PaymentId = payment.Id, Provider = provider, ProviderReference = payment.ProviderPaymentReference, Amount = order.Subtotal, Currency = order.Currency, Method = methodType, Status = PaymentAttemptStatus.Captured, IdempotencyKey = $"checkout:{idempotencyKey}", CreatedAt = now, CompletedAt = now });
         db.Orders.Add(order);
+        db.Payments.Add(payment);
         db.CartItems.RemoveRange(cart.Items);
         db.IdempotencyRecords.Add(new IdempotencyRecord { Id = Guid.CreateVersion7(), CustomerId = customerId, Key = idempotencyKey, RequestHash = hash, OrderId = order.Id, CreatedAt = now });
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-
-        await cache.RemoveByTagAsync("products", CancellationToken.None);
-        await cache.RemoveByTagAsync("homepage", CancellationToken.None);
-        return new CheckoutResultDto(MapOrder(order), false);
+        return new CheckoutResultDto(MapOrder(order), MapPayment(payment), false);
     }
 
     public async Task<OrderDto> GetOrderAsync(string customerId, Guid id, bool canReadAny, CancellationToken cancellationToken)
@@ -114,11 +114,13 @@ public sealed class CheckoutService(ICommerceDbContext db, IReadModelCache cache
     private async Task<CheckoutResultDto> ReplayAsync(IdempotencyRecord record, string hash, string customerId, CancellationToken cancellationToken)
     {
         if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(record.RequestHash), Convert.FromHexString(hash))) throw CommerceErrors.Conflict("idempotency_key_reused", "The idempotency key was already used with a different request.");
-        return new CheckoutResultDto(await GetOrderAsync(customerId, record.OrderId, false, cancellationToken), true);
+        var payment = await db.Payments.AsNoTracking().Include(x => x.Attempts).SingleAsync(x => x.OrderId == record.OrderId, cancellationToken);
+        return new CheckoutResultDto(await GetOrderAsync(customerId, record.OrderId, false, cancellationToken), MapPayment(payment), true);
     }
 
     private static OrderDto MapOrder(Order order) => new(order.Id, order.OrderNumber, order.Status.ToString(), new MoneyDto(order.Subtotal, order.Currency), order.CreatedAt,
         order.Items.OrderBy(i => i.ProductTitle).Select(i => new OrderItemDto(i.VariantId, i.Sku, i.ProductTitle, i.VariantName, i.Quantity, new MoneyDto(i.UnitPrice, order.Currency), new MoneyDto(i.LineTotal, order.Currency))).ToList());
+    private static PaymentDto MapPayment(Payment x) => new(x.Id, x.OrderId, x.CustomerId, new(x.AmountAuthorized, x.Currency), new(x.AmountCaptured, x.Currency), new(x.AmountRefunded, x.Currency), x.Status.ToString(), x.Provider, x.ProviderPaymentReference, x.PaymentMethodType.ToString(), x.CreatedAt, x.UpdatedAt, x.ExpiresAt, x.Attempts.OrderBy(x => x.CreatedAt).Select(a => new PaymentAttemptDto(a.Id, a.Provider, a.ProviderReference, new(a.Amount, a.Currency), a.Method.ToString(), a.Status.ToString(), a.FailureCategory?.ToString(), a.AuthenticationRequired, a.CreatedAt, a.CompletedAt)).ToList());
 
     private static void Validate(string key, CheckoutRequest request)
     {

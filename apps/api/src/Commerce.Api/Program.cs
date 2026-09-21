@@ -95,10 +95,13 @@ builder.Services.AddScoped<AdminCatalogService>();
 builder.Services.AddScoped<OperationsService>();
 builder.Services.AddScoped<SupplyChainService>();
 builder.Services.AddScoped<WarehouseExecutionService>();
+builder.Services.AddScoped<PaymentOrchestrator>();
+builder.Services.AddSingleton<IPaymentProvider>(_ => new TestPaymentProvider(builder.Configuration["PAYMENT_TEST_WEBHOOK_SECRET"] ?? "development-test-webhook-secret"));
 builder.Services.AddSingleton<IInvoiceResolver, GenericQrInvoiceResolver>();
 builder.Services.AddSingleton<IInvoiceResolver, FbrInvoiceResolver>();
 builder.Services.AddSingleton<IInvoiceResolver, SrbInvoiceResolver>();
 builder.Services.AddHostedService<OperationsPriceActivationService>();
+builder.Services.AddHostedService<PaymentExpiryService>();
 builder.Services.AddScoped<ApplicationUserResolver>();
 builder.Services.AddTransient<IClaimsTransformation, KeycloakClaimsTransformation>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, SecurityAuthorizationResultHandler>();
@@ -276,6 +279,13 @@ app.MapGet("/health/identity", async (IHttpClientFactory clients, CancellationTo
 }).RequireAuthorization(CommercePolicies.AdministrationAccess);
 
 var api = app.MapGroup("/api");
+api.MapPost("/payments/webhooks/{provider}", async (HttpContext http, string provider, PaymentOrchestrator service, CancellationToken ct) =>
+{
+    using var reader = new StreamReader(http.Request.Body, leaveOpen: false);
+    var payload = await reader.ReadToEndAsync(ct);
+    await service.HandleWebhookAsync(provider, payload, http.Request.Headers["X-Payment-Signature"].ToString(), ct);
+    return Results.Accepted();
+}).AllowAnonymous().RequireRateLimiting("admin").WithRequestTimeout("cart-write");
 api.MapGet("/catalog/categories", async (HttpContext http, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetCategoriesAsync(ct))).CacheOutput("public-short").RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search").AllowAnonymous();
 api.MapGet("/catalog/products/{slug}", async (HttpContext http, string slug, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
@@ -314,11 +324,19 @@ customer.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest r
         CommerceTelemetry.CheckoutDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 }).RequireRateLimiting("checkout").WithRequestTimeout("checkout");
+customer.MapGet("/payments/{id:guid}", async (HttpContext http, Guid id, ApplicationUserResolver user, PaymentOrchestrator service, CancellationToken ct) => { NoStore(http); var payment = await service.GetPaymentAsync(id, ct); if (payment.CustomerId != await user.GetRequiredUserIdAsync(ct)) return Results.NotFound(); return Results.Ok(payment); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
+customer.MapPost("/payments/{id:guid}/confirm", async (HttpContext http, Guid id, ConfirmPaymentRequest request, CancellationToken ct) => { var service = http.RequestServices.GetRequiredService<PaymentOrchestrator>(); var user = http.RequestServices.GetRequiredService<ApplicationUserResolver>(); var payment = await service.GetPaymentAsync(id, ct); if (payment.CustomerId != await user.GetRequiredUserIdAsync(ct)) return Results.NotFound(); return Results.Ok(await service.ConfirmAsync(id, http.Request.Headers["Idempotency-Key"].ToString(), request.PaymentMethodToken, ct)); }).RequireRateLimiting("checkout").WithRequestTimeout("checkout");
 customer.MapGet("/orders", async (HttpContext http, int? pageSize, ApplicationUserResolver user, IAuthorizationService authorization, CheckoutService service, CancellationToken ct) => { NoStore(http); var canReadAny = (await authorization.AuthorizeAsync(http.User, CommercePolicies.OrdersReadAny)).Succeeded; return await service.GetOrdersAsync(await user.GetRequiredUserIdAsync(ct), pageSize ?? 20, canReadAny, ct); }).RequireAuthorization(CommercePolicies.OrdersReadOwn).RequireRateLimiting("cart").WithRequestTimeout("private-read");
 customer.MapGet("/orders/{id:guid}", async (HttpContext http, Guid id, ApplicationUserResolver user, IAuthorizationService authorization, CheckoutService service, CancellationToken ct) => { NoStore(http); var canReadAny = (await authorization.AuthorizeAsync(http.User, CommercePolicies.OrdersReadAny)).Succeeded; return await service.GetOrderAsync(await user.GetRequiredUserIdAsync(ct), id, canReadAny, ct); }).RequireAuthorization(CommercePolicies.OrdersReadOwn).RequireRateLimiting("cart").WithRequestTimeout("private-read");
 
 var admin = api.MapGroup("/admin");
 admin.RequireAuthorization(CommercePolicies.AdministrationAccess).RequireRateLimiting("admin").WithRequestTimeout("catalog");
+admin.MapGet("/payments", async (HttpContext http, PaymentOrchestrator service, CancellationToken ct) => { NoStore(http); return await service.GetPaymentsAsync(ct); }).RequireAuthorization(CommercePolicies.PaymentsRead);
+admin.MapGet("/payments/providers", (PaymentOrchestrator service) => service.GetProviders()).RequireAuthorization(CommercePolicies.PaymentsRead);
+admin.MapGet("/payments/{id:guid}", async (HttpContext http, Guid id, PaymentOrchestrator service, CancellationToken ct) => { NoStore(http); return await service.GetPaymentAsync(id, ct); }).RequireAuthorization(CommercePolicies.PaymentsRead);
+admin.MapPost("/payments/{id:guid}/capture", async (Guid id, CapturePaymentRequest request, ApplicationUserResolver user, PaymentOrchestrator service, CancellationToken ct) => await service.CaptureAsync(id, request.Amount, await user.GetRequiredUserIdAsync(ct), ct)).RequireAuthorization(CommercePolicies.PaymentsCapture);
+admin.MapPost("/payments/{id:guid}/refunds", async (HttpContext http, Guid id, RefundRequest request, CancellationToken ct) => { var authorization = http.RequestServices.GetRequiredService<IAuthorizationService>(); if (request.Amount > 1_000m && !(await authorization.AuthorizeAsync(http.User, CommercePolicies.PaymentsRefundLarge)).Succeeded) return Results.Forbid(); var service = http.RequestServices.GetRequiredService<PaymentOrchestrator>(); var user = http.RequestServices.GetRequiredService<ApplicationUserResolver>(); return Results.Ok(await service.RefundAsync(id, request, http.Request.Headers["Idempotency-Key"].ToString(), await user.GetRequiredUserIdAsync(ct), ct)); }).RequireAuthorization(CommercePolicies.PaymentsRefund);
+admin.MapPost("/payments/{id:guid}/reconcile", async (Guid id, ApplicationUserResolver user, PaymentOrchestrator service, CancellationToken ct) => await service.ReconcileAsync(id, await user.GetRequiredUserIdAsync(ct), ct)).RequireAuthorization(CommercePolicies.PaymentsReconcile);
 admin.MapGet("/products/{id:guid}", async (HttpContext http, Guid id, AdminCatalogService service, CancellationToken ct) =>
 {
     var product = await service.GetProductAsync(id, ct);
