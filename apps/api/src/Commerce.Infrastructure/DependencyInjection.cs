@@ -16,6 +16,7 @@ public static class DependencyInjection
         // strategy; ambiguous commits are resolved by the persisted idempotency key.
         services.AddDbContext<CommerceDbContext>(options => options.UseNpgsql(database, npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
         services.AddScoped<ICommerceDbContext>(sp => sp.GetRequiredService<CommerceDbContext>());
+        services.AddScoped<IProductSearch, PostgresProductSearch>();
 
         var cacheEnabled = !bool.TryParse(configuration["CACHE_ENABLED"], out var configuredCacheEnabled) || configuredCacheEnabled;
         var cacheProvider = configuration["CACHE_PROVIDER"]?.ToLowerInvariant() ?? "valkey";

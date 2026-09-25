@@ -8,7 +8,7 @@ import { BottomNav } from "@/components/shell/bottom-nav";
 import { SearchMode } from "@/components/shell/search-mode";
 import { SignInGate } from "@/components/shell/sign-in-gate";
 import { SiteHeader } from "@/components/shell/site-header";
-import { isLocale, localeDirection, locales, parseRegion, REGION_COOKIE, regionFromHint } from "@/i18n/config";
+import { isLocale, localeDirection, locales, parseRegion, REGION_COOKIE, regionFromHint, withLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionary";
 import { serverGet } from "@/lib/api";
 import { publicSession } from "@/lib/auth/session";
@@ -27,7 +27,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
   let categories: Category[] = [];
-  try { categories = await serverGet<Category[]>("/api/catalog/categories", 300); } catch { /* Navigation still works through Discover. */ }
+  try { categories = await serverGet<Category[]>(withLocale("/api/catalog/categories", lang), 300); } catch { /* Navigation still works through Discover. */ }
   const [dictionary, cookieStore, headerStore, storedSession] = await Promise.all([getDictionary(lang), cookies(), headers(), publicSession()]);
   // A saved region always wins. Without one, Cloudflare's country is a first-visit hint only.
   const storedRegion = parseRegion(cookieStore.get(REGION_COOKIE)?.value);

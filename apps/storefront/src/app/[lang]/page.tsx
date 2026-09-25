@@ -3,9 +3,9 @@ import { HomeSearch } from "@/components/home/home-search";
 import { RecentlyExplored } from "@/components/home/recently-explored";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Link } from "@/components/providers/locale-provider";
-import { CATALOG_LANG } from "@/i18n/config";
+import { withLocale } from "@/i18n/config";
 import { format } from "@/i18n/dictionary";
-import { currentDictionary } from "@/i18n/server";
+import { currentDictionary, currentLocale } from "@/i18n/server";
 import { serverGet } from "@/lib/api";
 import { categoryPath, childCategories } from "@/lib/categories";
 import type { HomeModel, ProductCardModel, ProductPage } from "@/lib/types";
@@ -19,10 +19,11 @@ const optional = <T,>(promise: Promise<T>) => promise.catch(() => null);
 
 /** Few products per section, no repeats across sections, and nothing without real data behind it. */
 export default async function StorefrontPage() {
+  const locale = await currentLocale();
   const [home, newest, rated, t] = await Promise.all([
-    serverGet<HomeModel>("/api/storefront/home", 60),
-    optional(serverGet<ProductPage>(`/api/catalog/products?sort=newest&pageSize=${RAIL_SIZE * 3}`, 60)),
-    optional(serverGet<ProductPage>(`/api/catalog/products?sort=rating&pageSize=${RAIL_SIZE * 3}`, 60)),
+    serverGet<HomeModel>(withLocale("/api/storefront/home", locale), 60),
+    optional(serverGet<ProductPage>(withLocale(`/api/catalog/products?sort=newest&pageSize=${RAIL_SIZE * 3}`, locale), 60)),
+    optional(serverGet<ProductPage>(withLocale(`/api/catalog/products?sort=rating&pageSize=${RAIL_SIZE * 3}`, locale), 60)),
     currentDictionary(),
   ]);
 
@@ -54,8 +55,8 @@ export default async function StorefrontPage() {
             {spaces.map((space) => (
               <li key={space.id}>
                 <Link href={categoryPath(space.slug)} aria-label={format(t.home.explore, { category: space.name })}>
-                  <span className="t-h3" lang={CATALOG_LANG} dir="auto">{space.name}</span>
-                  <span className="home-spaces__children t-meta" lang={CATALOG_LANG} dir="auto">{childCategories(home.navigation, space.id).slice(0, 3).map((c) => c.name).join(" · ")}</span>
+                  <span className="t-h3" lang={space.locale} dir="auto">{space.name}</span>
+                  <span className="home-spaces__children t-meta" dir="auto">{childCategories(home.navigation, space.id).slice(0, 3).map((c) => c.name).join(" · ")}</span>
                   <ArrowIcon className="flip-rtl" />
                 </Link>
               </li>

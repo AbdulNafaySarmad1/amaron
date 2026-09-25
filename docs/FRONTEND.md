@@ -22,6 +22,8 @@ Each category has its own page at `/{locale}/c/{slug}`; results always come from
 
 Products carry a `kind` (presentation only, e.g. `book` renders a cover) and ordered attributes. Attributes flagged as highlights (at most three) summarise the product on cards; the full list is the product's specifications. Nothing in React branches on a specific product type beyond choosing that presentation.
 
+Catalog requests carry the page language (`withLocale()`), and product and category text is marked with the language the API reports it in, not the page language. Values such as prices inside translated sentences go through `isolate()` so their direction survives right-to-left text.
+
 Counted strings ("3 items", Russian "2 товара", Arabic dual forms) are plural-form objects in the dictionaries and are rendered with `plural()`, which uses `Intl.PluralRules`; never build them with `format()`.
 
 ## Homepage

@@ -283,5 +283,15 @@
     "rated": "سب سے زیادہ پسندیدہ",
     "recent": "حال ہی میں دیکھی گئی",
     "seeAll": "سب دیکھیں"
+  },
+  "related": {
+    "accessory": "اپنا سیٹ اپ مکمل کریں",
+    "compatible": "اس کے ساتھ کام کرتا ہے",
+    "complementary": "اس کے ساتھ خوب جچتا ہے",
+    "alternative": "یہ بھی دیکھیں",
+    "upgrade": "بہتر انتخاب",
+    "frequentlyBoughtWith": "اکثر ساتھ خریدے جاتے ہیں",
+    "usefulAddition": "ایک مفید اضافہ",
+    "add": "شامل کریں"
   }
 }

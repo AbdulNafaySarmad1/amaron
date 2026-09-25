@@ -38,6 +38,33 @@ public static class CommerceSeeder
         foreach (var product in undetailed.Where(p => p.Attributes.Count == 0)) ApplyDetails(product);
         if (undetailed.Count > 0) await db.SaveChangesAsync(cancellationToken);
 
+        if (!await db.ProductRelationships.AnyAsync(cancellationToken))
+        {
+            var byTitle = await db.Products.Where(p => seedIds.Contains(p.Id)).ToDictionaryAsync(p => p.Title, p => p.Id, cancellationToken);
+            foreach (var (source, target, type, score, reason) in SeedRelationships)
+                if (byTitle.TryGetValue(source, out var sourceId) && byTitle.TryGetValue(target, out var targetId))
+                    db.ProductRelationships.Add(new ProductRelationship { SourceProductId = sourceId, TargetProductId = targetId, Type = type, RelevanceScore = score, Reason = reason });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        if (!await db.ProductTranslations.AnyAsync(cancellationToken) && !await db.CategoryTranslations.AnyAsync(cancellationToken))
+        {
+            foreach (var category in await db.Categories.Where(c => CommerceSeedTranslations.Categories.Keys.Contains(c.Slug)).ToListAsync(cancellationToken))
+            {
+                var (ru, ur, ar) = CommerceSeedTranslations.Categories[category.Slug];
+                foreach (var (locale, name) in new[] { ("ru", ru), ("ur", ur), ("ar", ar) })
+                    db.CategoryTranslations.Add(new CategoryTranslation { CategoryId = category.Id, Locale = locale, Name = name });
+            }
+            foreach (var product in await db.Products.Where(p => seedIds.Contains(p.Id)).ToListAsync(cancellationToken))
+            {
+                if (!CommerceSeedTranslations.Products.TryGetValue(product.Title, out var titles)) continue;
+                var descriptions = CommerceSeedTranslations.Description(titles);
+                foreach (var (locale, title, description) in new[] { ("ru", titles.Ru, descriptions.Ru), ("ur", titles.Ur, descriptions.Ur), ("ar", titles.Ar, descriptions.Ar) })
+                    db.ProductTranslations.Add(new ProductTranslation { ProductId = product.Id, Locale = locale, Title = title, Description = description });
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         var seedTime = DateTimeOffset.UtcNow;
         var warehouseId = Id(9000);
         if (!await db.Warehouses.AnyAsync(cancellationToken))
@@ -110,6 +137,36 @@ private static void ApplyDetails(Product product)
         ["Cable Management Kit"] = ("accessory", [("*Includes", "40 pieces"), ("*Material", "Silicone and hook-and-loop"), ("*Colours", "Graphite, sand")]),
         ["Webcam Light"] = ("light", [("*Brightness", "10 levels"), ("*Colour temperature", "3200–5600 K"), ("*Mount", "Clip-on")]),
     };
+
+    private static readonly (string Source, string Target, RelationshipType Type, decimal Score, string Reason)[] SeedRelationships =
+    [
+        ("Pour-Over Coffee Set", "Digital Kitchen Scale", RelationshipType.Accessory, 0.95m, "Weigh beans and water for a consistent brew"),
+        ("Pour-Over Coffee Set", "French Press", RelationshipType.Alternative, 0.70m, "Fuller-bodied coffee, no filters to buy"),
+        ("French Press", "Digital Kitchen Scale", RelationshipType.Accessory, 0.85m, "Measure grounds the same way every morning"),
+        ("French Press", "Pour-Over Coffee Set", RelationshipType.Alternative, 0.70m, "A cleaner, brighter cup"),
+        ("Cast Iron Skillet", "Cookbook for Weeknights", RelationshipType.Complementary, 0.80m, "Most of its recipes use one pan"),
+        ("Cookbook for Weeknights", "Cast Iron Skillet", RelationshipType.Complementary, 0.80m, "The pan the recipes are written around"),
+        ("Adjustable Laptop Stand", "Mechanical Keyboard", RelationshipType.Complementary, 0.90m, "A raised screen needs a separate keyboard"),
+        ("Adjustable Laptop Stand", "Ergonomic Mouse", RelationshipType.Complementary, 0.85m, "Completes a raised-screen setup"),
+        ("Adjustable Laptop Stand", "USB-C Travel Hub", RelationshipType.Accessory, 0.75m, "One cable to the laptop, everything else through the hub"),
+        ("Mechanical Keyboard", "Ergonomic Mouse", RelationshipType.Complementary, 0.80m, "Uses the same USB-C and Bluetooth connections"),
+        ("Mechanical Keyboard", "Adjustable Laptop Stand", RelationshipType.Complementary, 0.70m, "Lift your screen to eye level"),
+        ("Ergonomic Mouse", "Mechanical Keyboard", RelationshipType.Complementary, 0.70m, "Pairs over the same Bluetooth connection"),
+        ("Studio Microphone", "Webcam Light", RelationshipType.Complementary, 0.85m, "Look as clear as you sound on calls"),
+        ("Studio Microphone", "Noise-Cancelling Headphones", RelationshipType.Compatible, 0.80m, "Monitor your voice without echo"),
+        ("Webcam Light", "Studio Microphone", RelationshipType.Complementary, 0.80m, "Sound as clear as you look"),
+        ("Desk Organizer", "Cable Management Kit", RelationshipType.Complementary, 0.90m, "Keeps the cables behind it out of sight"),
+        ("Cable Management Kit", "Desk Organizer", RelationshipType.Complementary, 0.80m, "A place for what the cables connect to"),
+        ("E-Reader Cover", "Smart Reading Lamp", RelationshipType.Complementary, 0.70m, "Warm light for reading late"),
+        ("Linen Sheet Set", "Smart Reading Lamp", RelationshipType.Complementary, 0.50m, "For bedside reading"),
+        ("Noise-Cancelling Headphones", "Portable Speaker", RelationshipType.Alternative, 0.60m, "Music for the room instead of just you"),
+        ("Portable Speaker", "Noise-Cancelling Headphones", RelationshipType.Alternative, 0.60m, "Private listening, with noise cancelling"),
+        ("Distributed Systems Field Guide", "Platform Engineering Handbook", RelationshipType.Complementary, 0.85m, "Read next: running systems in production"),
+        ("Platform Engineering Handbook", "Distributed Systems Field Guide", RelationshipType.Complementary, 0.85m, "The fundamentals under platform work"),
+        ("Everyday Backpack", "Insulated Water Bottle", RelationshipType.Accessory, 0.75m, "Fits the side pocket"),
+        ("Everyday Backpack", "USB-C Travel Hub", RelationshipType.Accessory, 0.60m, "Small enough for the front pocket"),
+        ("Insulated Water Bottle", "Everyday Backpack", RelationshipType.Complementary, 0.50m, "Has a side pocket sized for it"),
+    ];
 
     private static Guid Id(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
     private static string Slug(string value) => value.ToLowerInvariant().Replace("-", " ").Replace(" ", "-");

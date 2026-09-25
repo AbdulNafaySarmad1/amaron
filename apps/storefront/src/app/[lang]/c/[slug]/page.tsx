@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FilterDisclosure } from "@/components/catalog/filter-disclosure";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Link } from "@/components/providers/locale-provider";
-import { CATALOG_LANG, intlLocale, localizePath } from "@/i18n/config";
+import { CATALOG_LANG, intlLocale, type Locale, localizePath, withLocale } from "@/i18n/config";
 import { format, plural } from "@/i18n/dictionary";
 import { currentDictionary, currentLocale } from "@/i18n/server";
 import { serverGet } from "@/lib/api";
@@ -16,8 +16,8 @@ type Search = Record<string, string | string[] | undefined>;
 const FILTER_KEYS = ["brand", "minPrice", "maxPrice", "minimumRating", "available"] as const;
 const one = (search: Search, key: string) => { const value = search[key]; return (Array.isArray(value) ? value[0] : value)?.trim() || undefined; };
 
-async function loadCategory(slug: string) {
-  const categories = await serverGet<Category[]>("/api/catalog/categories", 300);
+async function loadCategory(slug: string, locale: Locale) {
+  const categories = await serverGet<Category[]>(withLocale("/api/catalog/categories", locale), 300);
   const trail = categoryTrail(categories, slug);
   const category = trail.at(-1);
   if (!category) notFound();
@@ -25,14 +25,14 @@ async function loadCategory(slug: string) {
 }
 
 export async function generateMetadata({ params }: PageProps<"/[lang]/c/[slug]">): Promise<Metadata> {
-  const { category } = await loadCategory((await params).slug);
+  const { category } = await loadCategory((await params).slug, await currentLocale());
   return { title: category.name };
 }
 
 /** A category as its own shopping space: results never leave its subtree, and search stays inside it unless asked. */
 export default async function CategoryPage({ params, searchParams }: PageProps<"/[lang]/c/[slug]">) {
   const [{ slug }, search, t, locale] = await Promise.all([params, searchParams as Promise<Search>, currentDictionary(), currentLocale()]);
-  const { categories, trail, category } = await loadCategory(slug);
+  const { categories, trail, category } = await loadCategory(slug, locale);
   const c = t.category;
   const q = one(search, "q");
   const sort = one(search, "sort");
@@ -42,7 +42,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
   if (q) query.set("q", q);
   if (sort) query.set("sort", sort);
   for (const key of FILTER_KEYS) { const value = one(search, key); if (value) query.set(key, value); }
-  const results = await serverGet<ProductPage>(`/api/catalog/products?${query}`, 20);
+  const results = await serverGet<ProductPage>(withLocale(`/api/catalog/products?${query}`, locale), 20);
 
   const activeFilters = FILTER_KEYS.filter((key) => one(search, key)).length;
   const here = localizePath(locale, categoryPath(category.slug));
@@ -56,7 +56,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
   };
   const hidden = (keys: readonly string[]) => keys.map((key) => { const value = key === "q" ? q : key === "sort" ? sort : one(search, key); return value ? <input key={key} type="hidden" name={key} value={value} /> : null; });
   const children = childCategories(categories, category.id);
-  const name = <span lang={CATALOG_LANG} dir="auto">{category.name}</span>;
+  const name = <span lang={category.locale} dir="auto">{category.name}</span>;
 
   return (
     <main className="page category-page">
@@ -64,7 +64,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
         <ol>
           <li><Link href="/">{c.home}</Link></li>
           {trail.map((item) => (
-            <li key={item.id}>{item.id === category.id ? <span aria-current="page" lang={CATALOG_LANG} dir="auto">{item.name}</span> : <Link href={categoryPath(item.slug)} lang={CATALOG_LANG} dir="auto">{item.name}</Link>}</li>
+            <li key={item.id}>{item.id === category.id ? <span aria-current="page" lang={item.locale} dir="auto">{item.name}</span> : <Link href={categoryPath(item.slug)} lang={item.locale} dir="auto">{item.name}</Link>}</li>
           ))}
         </ol>
       </nav>
@@ -79,7 +79,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
         </form>
         {children.length ? (
           <nav className="chip-row" aria-label={format(c.subcategories, { category: category.name })}>
-            {children.map((child) => <Link key={child.id} className="chip" href={categoryPath(child.slug)} lang={CATALOG_LANG} dir="auto">{child.name}</Link>)}
+            {children.map((child) => <Link key={child.id} className="chip" href={categoryPath(child.slug)} lang={child.locale} dir="auto">{child.name}</Link>)}
           </nav>
         ) : null}
       </header>

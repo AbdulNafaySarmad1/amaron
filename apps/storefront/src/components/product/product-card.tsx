@@ -15,7 +15,7 @@ import { useSavedStore } from "@/store/saved-store";
 type AddState = "idle" | "loading" | "success" | "error";
 
 /** Object-first card: the product carries the layout, and its kind decides the shape (books get a cover). */
-export function ProductCard({ product, onAdd, priority = false }: { product: ProductCardModel; onAdd?: (variantId: string) => Promise<boolean | void>; priority?: boolean }) {
+export function ProductCard({ product, onAdd, priority = false, note }: { product: ProductCardModel; onAdd?: (variantId: string) => Promise<boolean | void>; priority?: boolean; note?: string }) {
   const t = useT();
   const intl = useIntlLocale();
   const [addState, setAddState] = useState<AddState>("idle");
@@ -46,7 +46,7 @@ export function ProductCard({ product, onAdd, priority = false }: { product: Pro
     <article className={`product-card product-card--${isBook ? "book" : "object"}`} data-priority={priority || undefined}>
       <div className="product-card__media">
         <Link href={`/products/${product.slug}`} prefetch={false} className="product-card__image-link" aria-label={format(t.product.view, { title: product.title })}>
-          <ProductVisual slug={product.slug} title={product.title} variant={isBook ? "cover" : "object"} byline={isBook ? product.highlights[0]?.value : undefined} />
+          <ProductVisual slug={product.slug} title={product.title} lang={product.locale} variant={isBook ? "cover" : "object"} byline={isBook ? product.highlights[0]?.value : undefined} />
         </Link>
         <button className="product-card__save" type="button" aria-label={format(saved ? t.product.unsave : t.product.save, { title: product.title })} aria-pressed={saved} onClick={() => toggleSaved(product.id)}>
           <HeartIcon fill={saved ? "currentColor" : "none"} />
@@ -55,7 +55,8 @@ export function ProductCard({ product, onAdd, priority = false }: { product: Pro
 
       <div className="product-card__body">
         <p className="product-card__brand t-meta" lang={CATALOG_LANG} dir="auto">{product.brand}</p>
-        <h3 className="t-product" lang={CATALOG_LANG} dir="auto"><Link href={`/products/${product.slug}`} prefetch={false}>{product.title}</Link></h3>
+        <h3 className="t-product" lang={product.locale} dir="auto"><Link href={`/products/${product.slug}`} prefetch={false}>{product.title}</Link></h3>
+        {note ? <p className="product-card__note" lang={CATALOG_LANG} dir="auto">{note}</p> : null}
         {product.highlights.length ? (
           <dl className="product-card__specs" lang={CATALOG_LANG} dir="auto">
             {product.highlights.map((spec) => <div key={spec.label}><dt className="sr-only">{spec.label}</dt><dd>{specText(spec)}</dd></div>)}

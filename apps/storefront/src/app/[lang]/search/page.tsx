@@ -2,7 +2,7 @@ import { Untranslated } from "@/components/i18n/untranslated";
 import { Link } from "@/components/providers/locale-provider";
 import { ProductGrid } from "@/components/product/product-grid";
 import { currentLocale } from "@/i18n/server";
-import { localizePath } from "@/i18n/config";
+import { localizePath, withLocale } from "@/i18n/config";
 import { redirect } from "next/navigation";
 import { serverGet } from "@/lib/api";
 import type { Category, ProductPage } from "@/lib/types";
@@ -33,8 +33,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   }
   query.set("pageSize", "24");
   const [results, categories] = await Promise.all([
-    serverGet<ProductPage>(`/api/catalog/products?${query.toString()}`, 20),
-    serverGet<Category[]>("/api/catalog/categories", 300),
+    serverGet<ProductPage>(withLocale(`/api/catalog/products?${query.toString()}`, locale), 20),
+    serverGet<Category[]>(withLocale("/api/catalog/categories", locale), 300),
   ]);
   const searchTerm = value(parameters, "q");
   const category = value(parameters, "category");

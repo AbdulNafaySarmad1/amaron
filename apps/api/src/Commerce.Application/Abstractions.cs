@@ -15,6 +15,9 @@ public interface ICommerceDbContext
     DbSet<Category> Categories { get; }
     DbSet<Product> Products { get; }
     DbSet<ProductVariant> ProductVariants { get; }
+    DbSet<ProductRelationship> ProductRelationships { get; }
+    DbSet<ProductTranslation> ProductTranslations { get; }
+    DbSet<CategoryTranslation> CategoryTranslations { get; }
     DbSet<InventoryItem> Inventory { get; }
     DbSet<ProductAsset> ProductAssets { get; }
     DbSet<Review> Reviews { get; }
@@ -107,4 +110,17 @@ public static class CommerceErrors
     public static CommerceException NotFound(string resource) => new("resource_not_found", $"{resource} was not found.", 404);
     public static CommerceException Validation(string message) => new("validation_failed", message, 400);
     public static CommerceException Conflict(string code, string message) => new(code, message, 409);
+}
+
+public sealed class ProductMatch
+{
+    public Guid ProductId { get; set; }
+    public double Rank { get; set; }
+}
+
+/// <summary>Full-text, typo-tolerant product matching. Provider-specific SQL lives in Infrastructure; the result composes into ordinary catalog queries.</summary>
+public interface IProductSearch
+{
+    /// <summary>Matches canonical text and, for a non-canonical locale, that locale's translated titles.</summary>
+    IQueryable<ProductMatch> Match(string query, string locale);
 }

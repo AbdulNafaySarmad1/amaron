@@ -3,6 +3,7 @@ using System;
 using Commerce.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Commerce.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CommerceDbContext))]
-    partial class CommerceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260925190000_AddProductRelationships")]
+    partial class AddProductRelationships
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -142,25 +145,6 @@ namespace Commerce.Infrastructure.Persistence.Migrations
                     b.HasIndex("ParentId", "SortOrder");
 
                     b.ToTable("categories", (string)null);
-                });
-
-            modelBuilder.Entity("Commerce.Domain.CategoryTranslation", b =>
-                {
-                    b.Property<Guid>("CategoryId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Locale")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
-
-                    b.HasKey("CategoryId", "Locale");
-
-                    b.ToTable("category_translations", (string)null);
                 });
 
             modelBuilder.Entity("Commerce.Domain.CycleCount", b =>
@@ -2001,41 +1985,6 @@ namespace Commerce.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Commerce.Domain.ProductTranslation", b =>
-                {
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Locale")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(8000)
-                        .HasColumnType("character varying(8000)");
-
-                    b.Property<string>("SeoDescription")
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<string>("SeoTitle")
-                        .HasMaxLength(240)
-                        .HasColumnType("character varying(240)");
-
-                    b.Property<string>("ShortDescription")
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(240)
-                        .HasColumnType("character varying(240)");
-
-                    b.HasKey("ProductId", "Locale");
-
-                    b.ToTable("product_translations", (string)null);
-                });
-
             modelBuilder.Entity("Commerce.Domain.ProductVariant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3113,17 +3062,6 @@ namespace Commerce.Infrastructure.Persistence.Migrations
                     b.Navigation("Parent");
                 });
 
-            modelBuilder.Entity("Commerce.Domain.CategoryTranslation", b =>
-                {
-                    b.HasOne("Commerce.Domain.Category", "Category")
-                        .WithMany("Translations")
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Category");
-                });
-
             modelBuilder.Entity("Commerce.Domain.CycleCount", b =>
                 {
                     b.HasOne("Commerce.Domain.Warehouse", null)
@@ -3563,17 +3501,6 @@ namespace Commerce.Infrastructure.Persistence.Migrations
                     b.Navigation("Target");
                 });
 
-            modelBuilder.Entity("Commerce.Domain.ProductTranslation", b =>
-                {
-                    b.HasOne("Commerce.Domain.Product", "Product")
-                        .WithMany("Translations")
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Product");
-                });
-
             modelBuilder.Entity("Commerce.Domain.ProductVariant", b =>
                 {
                     b.HasOne("Commerce.Domain.Product", "Product")
@@ -3881,8 +3808,6 @@ namespace Commerce.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Commerce.Domain.Category", b =>
                 {
                     b.Navigation("Products");
-
-                    b.Navigation("Translations");
                 });
 
             modelBuilder.Entity("Commerce.Domain.CycleCount", b =>
@@ -3927,8 +3852,6 @@ namespace Commerce.Infrastructure.Persistence.Migrations
                     b.Navigation("Assets");
 
                     b.Navigation("Reviews");
-
-                    b.Navigation("Translations");
 
                     b.Navigation("Variants");
                 });

@@ -2,8 +2,7 @@
 
 import { type KeyboardEvent, type MouseEvent, startTransition, useEffect, useRef, useState } from "react";
 import { ArrowIcon, CheckIcon, ClockIcon, CloseIcon, SearchIcon } from "@/components/icons";
-import { useLocalizedRouter, useT } from "@/components/providers/locale-provider";
-import { CATALOG_LANG } from "@/i18n/config";
+import { useLocale, useLocalizedRouter, useT } from "@/components/providers/locale-provider";
 import { format } from "@/i18n/dictionary";
 import { browserRequest } from "@/lib/api";
 import { categoryPath } from "@/lib/categories";
@@ -57,6 +56,7 @@ export function SearchMode({ categories }: { categories: Category[] }) {
 function SearchPanel({ categories, close }: { categories: Category[]; close: () => void }) {
   const router = useLocalizedRouter();
   const t = useT();
+  const locale = useLocale();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ term: string; items: Suggestion[]; failed: boolean } | null>(null);
   const [active, setActive] = useState(-1);
@@ -72,27 +72,27 @@ function SearchPanel({ categories, close }: { categories: Category[]; close: () 
     if (term.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      browserRequest<Suggestion[]>(`/api/public/search/suggestions?q=${encodeURIComponent(term)}${scope ? `&category=${scope.slug}` : ""}`, { signal: controller.signal })
+      browserRequest<Suggestion[]>(`/api/public/search/suggestions?q=${encodeURIComponent(term)}${scope ? `&category=${scope.slug}` : ""}&locale=${locale}`, { signal: controller.signal })
         .then((items) => setResults({ term: key, items, failed: false }))
         .catch(() => { if (!controller.signal.aborted) setResults({ term: key, items: [], failed: true }); });
     }, 140);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [term, key, scope]);
+  }, [term, key, scope, locale]);
 
   const typing = term.length >= 2;
   const current = typing && results?.term === key ? results : null;
   const submitHref = (value: string) => (scope ? `${categoryPath(scope.slug)}?q=${encodeURIComponent(value)}` : queryHref(value));
   const options: Option[] = typing
     ? [
-        ...(current?.items.filter((x) => x.type === "product" && x.slug).map((x) => ({ id: `p-${x.slug}`, label: x.value, lang: CATALOG_LANG, group: t.search.products, href: `/products/${x.slug}`, term })) ?? []),
-        ...(current?.items.filter((x) => x.type === "category" && x.slug).map((x) => ({ id: `c-${x.slug}`, label: x.value, lang: CATALOG_LANG, hint: t.search.browseHint, group: t.search.spaces, href: categoryPath(x.slug!) })) ?? []),
+        ...(current?.items.filter((x) => x.type === "product" && x.slug).map((x) => ({ id: `p-${x.slug}`, label: x.value, lang: x.locale, group: t.search.products, href: `/products/${x.slug}`, term })) ?? []),
+        ...(current?.items.filter((x) => x.type === "category" && x.slug).map((x) => ({ id: `c-${x.slug}`, label: x.value, lang: x.locale, hint: t.search.browseHint, group: t.search.spaces, href: categoryPath(x.slug!) })) ?? []),
         ...(scope
           ? [{ id: "all", label: format(t.category.seeAllIn, { category: scope.name }), group: "all", href: submitHref(term), term }, { id: "everywhere", label: format(t.category.searchAllFor, { query: term }), group: "all", href: queryHref(term), term }]
           : [{ id: "all", label: format(t.search.seeAll, { query: term }), group: "all", href: queryHref(term), term }]),
       ]
     : [
         ...recent.map((x, index) => ({ id: `r-${index}`, label: x, group: t.search.recent, href: queryHref(x), term: x })),
-        ...categories.filter((x) => !x.parentId).map((x) => ({ id: `c-${x.slug}`, label: x.name, lang: CATALOG_LANG, hint: t.search.browseHint, group: t.search.browse, href: categoryPath(x.slug) })),
+        ...categories.filter((x) => !x.parentId).map((x) => ({ id: `c-${x.slug}`, label: x.name, lang: x.locale, hint: t.search.browseHint, group: t.search.browse, href: categoryPath(x.slug) })),
       ];
   const groups = [...new Set(options.map((x) => x.group))];
 
@@ -141,7 +141,7 @@ function SearchPanel({ categories, close }: { categories: Category[]; close: () 
       {scopeCategory ? (
         <button type="button" className="search-mode__scope" aria-pressed={scoped} onClick={() => { setScoped((x) => !x); setActive(-1); }}>
           {scoped ? <CheckIcon width={16} height={16} /> : null}
-          <span lang={CATALOG_LANG} dir="auto">{format(t.category.within, { category: scopeCategory.name })}</span>
+          <span dir="auto">{format(t.category.within, { category: scopeCategory.name })}</span>
           {scoped ? <span className="sr-only">. {t.category.removeScope}</span> : null}
         </button>
       ) : null}

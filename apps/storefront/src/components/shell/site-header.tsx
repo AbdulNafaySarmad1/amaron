@@ -7,7 +7,7 @@ import { useStorefrontSession } from "@/components/providers/storefront-provider
 import { PreferencesControl } from "@/components/shell/preferences";
 import { useRequireSignIn } from "@/components/shell/sign-in-gate";
 import { format, plural } from "@/i18n/dictionary";
-import { CATALOG_LANG, stripLocale } from "@/i18n/config";
+import { stripLocale } from "@/i18n/config";
 import { browserRequest } from "@/lib/api";
 import { categoryPath } from "@/lib/categories";
 import type { Category } from "@/lib/types";
@@ -106,10 +106,10 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
         <ul>
           {roots.map((root) => (
             <li key={root.id}>
-              <Link className="t-h3" href={categoryPath(root.slug)} onClick={() => hidePopover("category-panel")} lang={CATALOG_LANG} dir="auto">{root.name}</Link>
+              <Link className="t-h3" href={categoryPath(root.slug)} onClick={() => hidePopover("category-panel")} lang={root.locale} dir="auto">{root.name}</Link>
               <ul>
                 {categories.filter((child) => child.parentId === root.id).map((child) => (
-                  <li key={child.id}><Link href={categoryPath(child.slug)} onClick={() => hidePopover("category-panel")} lang={CATALOG_LANG} dir="auto">{child.name}</Link></li>
+                  <li key={child.id}><Link href={categoryPath(child.slug)} onClick={() => hidePopover("category-panel")} lang={child.locale} dir="auto">{child.name}</Link></li>
                 ))}
               </ul>
             </li>

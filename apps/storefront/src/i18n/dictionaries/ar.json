@@ -315,5 +315,15 @@
     "rated": "الأعلى تقييمًا",
     "recent": "شاهدتها مؤخرًا",
     "seeAll": "عرض الكل"
+  },
+  "related": {
+    "accessory": "أكمل تجهيزك",
+    "compatible": "يعمل مع هذا المنتج",
+    "complementary": "يتناسب معه",
+    "alternative": "فكّر أيضًا في",
+    "upgrade": "خيار أعلى",
+    "frequentlyBoughtWith": "يُشترى معه غالبًا",
+    "usefulAddition": "إضافة مفيدة",
+    "add": "أضف"
   }
 }

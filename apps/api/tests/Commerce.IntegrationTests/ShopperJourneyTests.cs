@@ -878,6 +878,97 @@ public sealed class ShopperJourneyTests
         Assert.Equal("low_stock", CatalogService.AvailabilityHint(5));
     }
 
+    [Fact]
+    public async Task Search_ranks_by_relevance_tolerates_typos_and_stays_in_scope()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        using var client = factory.CreateClient();
+
+        async Task<string[]> Search(string query, string extra = "") =>
+            (await client.GetFromJsonAsync<ProductPageDto>($"/api/catalog/products?q={Uri.EscapeDataString(query)}&pageSize=100{extra}"))!.Items.Select(x => x.Title).ToArray();
+
+        Assert.Equal("Noise-Cancelling Headphones", (await Search("headphnes"))[0]);
+        Assert.Equal("Mechanical Keyboard", (await Search("keybaord"))[0]);
+        Assert.Equal("French Press", (await Search("frnch press"))[0]);
+        Assert.Equal("Noise-Cancelling Headphones", (await Search("wireless noise cancelling headphones"))[0]);
+        Assert.Equal(["Everyday Backpack"], await Search("everyday backpack")); // "everyday use" in every description must not match
+        Assert.Contains("Platform Engineering Handbook", await Search("hand"));
+        Assert.Equal(["Cable Management Kit"], await Search("cable")); // an exact hit switches typo matching off: no "Portable" via "able"
+        Assert.DoesNotContain("Insulated Water Bottle", await Search("book"));
+        Assert.Empty(await Search("zzqxv"));
+        Assert.Empty(await Search("handbook", "&category=electronics"));
+        var byPrice = await Search("stand", "&sort=price-asc");
+        Assert.Equal(2, byPrice.Length); // laptop stand and charging stand
+        Assert.Equal(byPrice.Order(), (await Search("stand", "&sort=name")));
+        Assert.Contains("Noise-Cancelling Headphones", (await client.GetFromJsonAsync<SuggestionDto[]>("/api/search/suggestions?q=headphnes"))!.Select(x => x.Value));
+    }
+
+    [Fact]
+    public async Task Relationships_explain_themselves_and_the_bag_suggests_one_sellable_setup_item()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        using var client = factory.CreateClient();
+
+        var pourOver = (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/pour-over-coffee-set"))!;
+        Assert.Equal(["accessory", "alternative"], pourOver.Relationships.Select(g => g.Type));
+        var accessory = Assert.Single(pourOver.Relationships[0].Items);
+        Assert.Equal(("Digital Kitchen Scale", "Weigh beans and water for a consistent brew"), (accessory.Product.Title, accessory.Reason));
+        Assert.Equal("French Press", Assert.Single(pourOver.Relationships[1].Items).Product.Title);
+
+        async Task<RelatedProductDto?> Addition(params Guid[] ids)
+        {
+            using var response = await client.GetAsync($"/api/catalog/products/addition?productIds={string.Join(',', ids)}");
+            return response.StatusCode == HttpStatusCode.NoContent ? null : await response.Content.ReadFromJsonAsync<RelatedProductDto>();
+        }
+        var scale = accessory.Product;
+        Assert.Equal("Digital Kitchen Scale", (await Addition(pourOver.Product.Id))!.Product.Title);
+        Assert.Null(await Addition(pourOver.Product.Id, scale.Id)); // already in the bag; the French Press is an alternative, not a setup item
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/catalog/products/addition?productIds=not-a-guid")).StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            var stock = await db.WarehouseStocks.SingleAsync(x => x.VariantId == scale.DefaultVariantId);
+            stock.SafetyStock = stock.OnHand;
+            await db.SaveChangesAsync();
+        }
+        Assert.Null(await Addition(pourOver.Product.Id)); // never suggest something checkout would refuse
+    }
+
+    [Fact]
+    public async Task Catalog_text_follows_the_requested_locale_and_falls_back_to_the_canonical_language()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: true);
+        using var client = factory.CreateClient();
+
+        var ur = (await client.GetFromJsonAsync<CategoryDto[]>("/api/catalog/categories?locale=ur"))!;
+        Assert.Equal(("الیکٹرانکس", "ur"), (ur.Single(c => c.Slug == "electronics").Name, ur.Single(c => c.Slug == "electronics").Locale));
+        var en = (await client.GetFromJsonAsync<CategoryDto[]>("/api/catalog/categories"))!;
+        Assert.Equal(("Electronics", "en"), (en.Single(c => c.Slug == "electronics").Name, en.Single(c => c.Slug == "electronics").Locale)); // the Urdu response was not cached for everyone
+
+        var ru = (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones?locale=ru-RU"))!.Product;
+        Assert.Equal(("Наушники с шумоподавлением", "ru", "Электроника"), (ru.Title, ru.Locale, ru.Category));
+        Assert.StartsWith("Наушники с шумоподавлением:", ru.Description);
+        Assert.Equal("Northstar", ru.Brand);
+        Assert.Contains(new SpecDto("Type", "Over-ear"), ru.Specifications); // specifications are not translated yet
+        var de = (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones?locale=de"))!.Product;
+        Assert.Equal(("Noise-Cancelling Headphones", "en"), (de.Title, de.Locale));
+
+        var urSearch = (await client.GetFromJsonAsync<ProductPageDto>($"/api/catalog/products?q={Uri.EscapeDataString("ہیڈفونز")}&locale=ur"))!;
+        var hit = Assert.Single(urSearch.Items);
+        Assert.Equal(("شور ختم کرنے والے ہیڈفونز", "ur"), (hit.Title, hit.Locale));
+        var enSearch = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?q=headphones&locale=ur"))!;
+        Assert.Equal("شور ختم کرنے والے ہیڈفونز", Assert.Single(enSearch.Items).Title); // English queries still work on an Urdu page
+        Assert.Contains("Наушники с шумоподавлением", (await client.GetFromJsonAsync<SuggestionDto[]>($"/api/search/suggestions?q={Uri.EscapeDataString("науш")}&locale=ru"))!.Select(x => x.Value));
+        Assert.Equal("Noise-Cancelling Headphones", (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones"))!.Product.Title);
+    }
+
     private static void AddProduct(Commerce.Infrastructure.CommerceDbContext db, Commerce.Domain.Category category, string title)
     {
         var now = DateTimeOffset.UtcNow;

@@ -6,6 +6,7 @@ import { format, plural } from "@/i18n/dictionary";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { CloseIcon, MinusIcon, PlusIcon } from "@/components/icons";
+import { UsefulAddition } from "@/components/cart/useful-addition";
 import { ProductVisual } from "@/components/ui/product-visual";
 import { formatMoney } from "@/lib/api";
 import { motionTokens } from "@/lib/motion";
@@ -93,6 +94,9 @@ export function CartDrawer() {
                     </li>
                   ))}
                 </ul>
+              ) : null}
+              {cart?.items.length ? (
+                <UsefulAddition productIds={cart.items.map((item) => item.productId)} onNavigate={close} />
               ) : null}
             </div>
             {cart?.items.length ? (

@@ -83,3 +83,6 @@ export function regionFromHint(countryHint: string | null | undefined): Region {
 
 /** Language of catalog content (names, descriptions) until product translations ship; the API will then report it per field. */
 export const CATALOG_LANG = "en";
+
+/** Adds the content locale to a catalog API path so names and descriptions come back translated where available. */
+export const withLocale = (path: string, locale: Locale) => `${path}${path.includes("?") ? "&" : "?"}locale=${locale}`;

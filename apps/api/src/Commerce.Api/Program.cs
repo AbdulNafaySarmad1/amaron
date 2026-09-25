@@ -134,7 +134,7 @@ builder.Services.AddResponseCompression(options =>
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 builder.Services.AddOutputCache(options =>
 {
-    options.AddPolicy("public-short", policy => policy.Expire(TimeSpan.FromSeconds(30)).Tag("public-storefront"));
+    options.AddPolicy("public-short", policy => policy.Expire(TimeSpan.FromSeconds(30)).SetVaryByQuery("locale").Tag("public-storefront"));
     options.AddPolicy("public-product", policy => policy.Expire(TimeSpan.FromMinutes(1)).SetVaryByRouteValue("slug").Tag("public-products"));
 });
 builder.Services.AddRequestTimeouts(options =>
@@ -294,13 +294,20 @@ api.MapPost("/payments/webhooks/{provider}", async (HttpContext http, string pro
     await service.HandleWebhookAsync(provider, payload, http.Request.Headers["X-Payment-Signature"].ToString(), ct);
     return Results.Accepted();
 }).AllowAnonymous().RequireRateLimiting("admin").WithRequestTimeout("cart-write");
-api.MapGet("/catalog/categories", async (HttpContext http, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetCategoriesAsync(ct))).CacheOutput("public-short").RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
-api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search").AllowAnonymous();
-api.MapGet("/catalog/products/{slug}", async (HttpContext http, string slug, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
-api.MapPost("/catalog/products/batch", (BatchProductsRequest request, CatalogService service, CancellationToken ct) => service.GetBatchAsync(request.ProductIds, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
-api.MapGet("/search/suggestions", (string q, string? category, CatalogService service, CancellationToken ct) => service.SuggestAsync(q, category, ct)).RequireRateLimiting("autocomplete").WithRequestTimeout("autocomplete").AllowAnonymous();
-api.MapGet("/storefront/home", (StorefrontService service, CancellationToken ct) => service.GetHomeAsync(ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
-api.MapGet("/storefront/products/{slug}", async (HttpContext http, string slug, StorefrontService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/catalog/categories", async (HttpContext http, string? locale, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetCategoriesAsync(locale, ct))).CacheOutput("public-short").RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, string? locale, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24, locale), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search").AllowAnonymous();
+api.MapGet("/catalog/products/{slug}", async (HttpContext http, string slug, string? locale, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, locale, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapPost("/catalog/products/batch", (BatchProductsRequest request, string? locale, CatalogService service, CancellationToken ct) => service.GetBatchAsync(request.ProductIds, locale, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/catalog/products/addition", async (string productIds, string? locale, CatalogService service, CancellationToken ct) =>
+{
+    var ids = new List<Guid>();
+    foreach (var part in productIds.Split(',', StringSplitOptions.TrimEntries)) { if (!Guid.TryParse(part, out var id)) return Results.BadRequest(); ids.Add(id); }
+    var addition = await service.GetUsefulAdditionAsync(ids, locale, ct);
+    return addition is null ? Results.NoContent() : Results.Ok(addition);
+}).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/search/suggestions", (string q, string? category, string? locale, CatalogService service, CancellationToken ct) => service.SuggestAsync(q, category, locale, ct)).RequireRateLimiting("autocomplete").WithRequestTimeout("autocomplete").AllowAnonymous();
+api.MapGet("/storefront/home", (string? locale, StorefrontService service, CancellationToken ct) => service.GetHomeAsync(locale, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/storefront/products/{slug}", async (HttpContext http, string slug, string? locale, StorefrontService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, locale, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 
 var customer = api.MapGroup("").RequireAuthorization(CommercePolicies.CustomerAccess);
 customer.MapGet("/storefront/cart-summary", async (HttpContext http, ApplicationUserResolver user, CartService service, CancellationToken ct) => { NoStore(http); return await service.GetSummaryAsync(await user.GetRequiredUserIdAsync(ct), ct); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");

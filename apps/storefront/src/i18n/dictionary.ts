@@ -43,3 +43,6 @@ export function plural(forms: PluralForms, count: number, locale: string, values
   const rule = new Intl.PluralRules(locale).select(count);
   return format(forms[rule] ?? forms.other, { count: count.toLocaleString(locale), ...values });
 }
+
+/** Wraps a value (a price, an order number) in Unicode isolation marks so it keeps its own direction inside a translated sentence. */
+export const isolate = (text: string) => `\u2068${text}\u2069`;

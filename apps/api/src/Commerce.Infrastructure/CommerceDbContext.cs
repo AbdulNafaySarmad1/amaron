@@ -9,6 +9,9 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
 {
     public DbSet<ApplicationUser> ApplicationUsers => Set<ApplicationUser>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<ProductRelationship> ProductRelationships => Set<ProductRelationship>();
+    public DbSet<ProductTranslation> ProductTranslations => Set<ProductTranslation>();
+    public DbSet<CategoryTranslation> CategoryTranslations => Set<CategoryTranslation>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<InventoryItem> Inventory => Set<InventoryItem>();
@@ -72,6 +75,30 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
         {
             e.ToTable("application_users"); e.HasKey(x => x.Id); e.Property(x => x.IdentityIssuer).HasMaxLength(500); e.Property(x => x.ExternalSubject).HasMaxLength(200); e.Property(x => x.DisplayName).HasMaxLength(200); e.Property(x => x.Email).HasMaxLength(320);
             e.HasIndex(x => new { x.IdentityIssuer, x.ExternalSubject }).IsUnique();
+        });
+        model.Entity<ProductTranslation>(e =>
+        {
+            e.ToTable("product_translations"); e.HasKey(x => new { x.ProductId, x.Locale });
+            e.Property(x => x.Locale).HasMaxLength(10); e.Property(x => x.Title).HasMaxLength(240); e.Property(x => x.ShortDescription).HasMaxLength(400);
+            e.Property(x => x.Description).HasMaxLength(8000); e.Property(x => x.SeoTitle).HasMaxLength(240); e.Property(x => x.SeoDescription).HasMaxLength(400);
+            e.HasOne(x => x.Product).WithMany(x => x.Translations).HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+        model.Entity<CategoryTranslation>(e =>
+        {
+            e.ToTable("category_translations"); e.HasKey(x => new { x.CategoryId, x.Locale });
+            e.Property(x => x.Locale).HasMaxLength(10); e.Property(x => x.Name).HasMaxLength(160);
+            e.HasOne(x => x.Category).WithMany(x => x.Translations).HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Cascade);
+        });
+        model.Entity<ProductRelationship>(e =>
+        {
+            e.ToTable("product_relationships", t => t.HasCheckConstraint("ck_product_relationships_not_self", "\"SourceProductId\" <> \"TargetProductId\""));
+            e.HasKey(x => new { x.SourceProductId, x.TargetProductId, x.Type });
+            e.Property(x => x.Type).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.RelevanceScore).HasPrecision(5, 4);
+            e.Property(x => x.Reason).HasMaxLength(200);
+            e.HasIndex(x => new { x.SourceProductId, x.Type, x.RelevanceScore });
+            e.HasOne(x => x.Source).WithMany().HasForeignKey(x => x.SourceProductId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Target).WithMany().HasForeignKey(x => x.TargetProductId).OnDelete(DeleteBehavior.Cascade);
         });
         model.Entity<Category>(e =>
         {

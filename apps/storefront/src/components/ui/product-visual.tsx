@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import { CATALOG_LANG } from "@/i18n/config";
 
 function hueFor(value: string) {
   let hash = 0;
@@ -8,11 +7,11 @@ function hueFor(value: string) {
 }
 
 /** Placeholder art until real product photography exists: an object with a monogram, or a typeset book cover. */
-export function ProductVisual({ slug, title, compact = false, variant = "object", byline }: { slug: string; title: string; compact?: boolean; variant?: "object" | "cover"; byline?: string }) {
+export function ProductVisual({ slug, title, compact = false, variant = "object", byline, lang }: { slug: string; title: string; compact?: boolean; variant?: "object" | "cover"; byline?: string; lang?: string }) {
   const style = { "--product-hue": hueFor(slug) } as CSSProperties;
   if (variant === "cover") {
     return (
-      <div className="product-visual product-visual--cover" style={style} aria-hidden="true" lang={CATALOG_LANG} dir="auto">
+      <div className="product-visual product-visual--cover" style={style} aria-hidden="true" lang={lang} dir="auto">
         <span className="product-visual__cover">
           <span className="product-visual__cover-title">{title}</span>
           {byline ? <span className="product-visual__cover-byline">{byline}</span> : null}

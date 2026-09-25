@@ -469,6 +469,13 @@ button { color: inherit; }
 .home-rail__head { align-items: baseline; display: flex; gap: var(--space-4); justify-content: space-between; }
 .home-rail .product-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
+/* Related products and the bag's single suggestion */
+.product-card__note { color: var(--accent-deep); font-size: var(--type-meta); font-weight: 650; margin: 0; }
+.useful-addition { border-top: var(--border-subtle); display: grid; gap: var(--space-3); margin-top: var(--space-6); padding-top: var(--space-5); }
+.useful-addition__row { align-items: center; display: grid; gap: var(--space-3); grid-template-columns: 4rem 1fr auto; }
+.useful-addition__row p { margin: 0; }
+.useful-addition__visual { border-radius: var(--radius-md); height: 4rem; overflow: hidden; }
+
 /* Category space */
 .breadcrumbs ol { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .breadcrumbs li:not(:last-child)::after { color: var(--ink-faint); content: "/"; margin-inline-start: var(--space-2); }

@@ -283,5 +283,15 @@
     "rated": "Highly rated",
     "recent": "Recently explored",
     "seeAll": "See all"
+  },
+  "related": {
+    "accessory": "Complete your setup",
+    "compatible": "Works with this",
+    "complementary": "Goes well with it",
+    "alternative": "Also consider",
+    "upgrade": "Step up",
+    "frequentlyBoughtWith": "Often bought together",
+    "usefulAddition": "One useful addition",
+    "add": "Add"
   }
 }

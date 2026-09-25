@@ -5,7 +5,7 @@ import { Link, useIntlLocale, useLocaleContext, useLocalizedRouter } from "@/com
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
 import { CATALOG_LANG, regions } from "@/i18n/config";
-import { format } from "@/i18n/dictionary";
+import { format, isolate } from "@/i18n/dictionary";
 import { ApiError, browserRequest, formatMoney } from "@/lib/api";
 import type { CheckoutResult, Payment, ShippingAddress } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
@@ -130,7 +130,7 @@ export function CheckoutForm() {
             <h2 id="step-review" className="t-h3"><span aria-hidden="true">3</span>{t.review}</h2>
             {pendingPayment ? <div className="checkout-error" role="status"><strong>{t.verifyTitle}</strong><span>{t.verifyBody}</span><Button type="button" onClick={() => void completeAuthentication()} busy={submitting}>{t.verify}</Button></div> : null}
             {error ? <div className="checkout-error" role="alert"><strong>{t.errorTitle}</strong><span>{error}</span></div> : null}
-            <Button size="large" className="checkout-pay" busy={submitting} type="submit" disabled={!!pendingPayment}>{submitting ? t.placing : format(t.pay, { amount: total })}</Button>
+            <Button size="large" className="checkout-pay" busy={submitting} type="submit" disabled={!!pendingPayment}>{submitting ? t.placing : format(t.pay, { amount: isolate(total) })}</Button>
             <p className="t-meta checkout-assurance">{t.assurance}</p>
           </section>
         </form>

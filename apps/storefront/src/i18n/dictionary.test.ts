@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { locales } from "./config";
-import { format, getDictionary, plural, withFallback } from "./dictionary";
+import { format, getDictionary, isolate, plural, withFallback } from "./dictionary";
 import en from "./dictionaries/en.json";
 
 const PLURAL = new Set(["zero", "one", "two", "few", "many", "other"]);
@@ -43,5 +43,11 @@ describe("dictionaries", () => {
     expect(plural(en.cart.items, 3, "en-US")).toBe("3 items");
     expect([1, 2, 5, 21].map((n) => plural(ru.cart.items, n, "ru-RU"))).toEqual(["1 товар", "2 товара", "5 товаров", "21 товар"]);
     expect([0, 1, 2, 3, 11, 100].map((n) => plural(ar.cart.items, n, "ar"))).toEqual(["لا عناصر", "عنصر واحد", "عنصران", "3 عناصر", "11 عنصرًا", "100 عنصر"]);
+  });
+
+  it("isolates values so their direction survives right-to-left sentences", () => {
+    const wrapped = isolate("$10.00");
+    expect([wrapped.charCodeAt(0), wrapped.charCodeAt(wrapped.length - 1)]).toEqual([0x2068, 0x2069]);
+    expect(wrapped.slice(1, -1)).toBe("$10.00");
   });
 });

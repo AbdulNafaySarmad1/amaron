@@ -29,6 +29,16 @@ public sealed class Category
     public int SortOrder { get; set; }
     public Category? Parent { get; set; }
     public List<Product> Products { get; set; } = [];
+    public List<CategoryTranslation> Translations { get; set; } = [];
+}
+
+/// <summary>A category's name in one locale. Missing locales fall back to the canonical (English) name.</summary>
+public sealed class CategoryTranslation
+{
+    public Guid CategoryId { get; set; }
+    public string Locale { get; set; } = "";
+    public string Name { get; set; } = "";
+    public Category Category { get; set; } = null!;
 }
 
 public sealed class Product
@@ -52,6 +62,37 @@ public sealed class Product
     public List<ProductVariant> Variants { get; set; } = [];
     public List<ProductAsset> Assets { get; set; } = [];
     public List<Review> Reviews { get; set; } = [];
+    public List<ProductTranslation> Translations { get; set; } = [];
+}
+
+/// <summary>A product's shopper-facing text in one locale. Each field falls back to the canonical (English) product when absent.</summary>
+public sealed class ProductTranslation
+{
+    public Guid ProductId { get; set; }
+    public string Locale { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? ShortDescription { get; set; }
+    public string? Description { get; set; }
+    public string? SeoTitle { get; set; }
+    public string? SeoDescription { get; set; }
+    public Product Product { get; set; } = null!;
+}
+
+/// <summary>How a target product relates to a source product. Drives merchandising sections, never catalog filtering.</summary>
+public enum RelationshipType { Accessory, Compatible, Complementary, Alternative, Upgrade, FrequentlyBoughtWith }
+
+/// <summary>A curated, explainable link between two products ("Works with this refrigerator", "Protect your appliance").</summary>
+public sealed class ProductRelationship
+{
+    public Guid SourceProductId { get; set; }
+    public Guid TargetProductId { get; set; }
+    public RelationshipType Type { get; set; }
+    /// <summary>Higher first within a type; 0-1 by convention.</summary>
+    public decimal RelevanceScore { get; set; }
+    /// <summary>Why the target is relevant, in shopper terms. Shown next to the suggestion.</summary>
+    public string Reason { get; set; } = "";
+    public Product Source { get; set; } = null!;
+    public Product Target { get; set; } = null!;
 }
 
 public sealed class ProductAttribute

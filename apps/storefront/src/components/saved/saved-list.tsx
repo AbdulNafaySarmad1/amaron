@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ProductGrid } from "@/components/product/product-grid";
-import { Link, useT } from "@/components/providers/locale-provider";
+import { Link, useLocale, useT } from "@/components/providers/locale-provider";
 import { browserRequest } from "@/lib/api";
 import type { ProductCardModel } from "@/lib/types";
 import { useSavedStore } from "@/store/saved-store";
@@ -11,6 +11,7 @@ type Loaded = { key: string; products: ProductCardModel[] } | { key: string; fai
 
 export function SavedList() {
   const t = useT();
+  const locale = useLocale();
   const ids = useSavedStore((state) => state.ids);
   const hydrated = useSavedStore((state) => state.hydrated);
   const key = ids.join(",");
@@ -20,11 +21,11 @@ export function SavedList() {
   useEffect(() => {
     if (!key) return;
     const controller = new AbortController();
-    browserRequest<ProductCardModel[]>(`/api/public/products/batch?ids=${encodeURIComponent(key)}`, { signal: controller.signal }, 10_000)
+    browserRequest<ProductCardModel[]>(`/api/public/products/batch?ids=${encodeURIComponent(key)}&locale=${locale}`, { signal: controller.signal }, 10_000)
       .then((products) => setLoaded({ key, products }))
       .catch(() => { if (!controller.signal.aborted) setLoaded({ key, failed: true }); });
     return () => controller.abort();
-  }, [key, attempt]);
+  }, [key, attempt, locale]);
 
   if (!hydrated) return <p className="t-meta" role="status">{t.saved.loading}</p>;
   if (!ids.length) {

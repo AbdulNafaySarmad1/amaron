@@ -8,7 +8,7 @@ import { useRequireSignIn } from "@/components/shell/sign-in-gate";
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
 import { CATALOG_LANG } from "@/i18n/config";
-import { format, plural } from "@/i18n/dictionary";
+import { format, isolate, plural } from "@/i18n/dictionary";
 import { formatMoney } from "@/lib/api";
 import { recordViewed } from "@/lib/recently-viewed";
 import { splitDescription } from "@/lib/specs";
@@ -53,20 +53,20 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
       <nav className="breadcrumbs" aria-label={t.category.breadcrumb}>
         <ol>
           <li><Link href="/">{t.category.home}</Link></li>
-          <li><Link href={`/c/${product.categorySlug}`} lang={CATALOG_LANG} dir="auto">{product.category}</Link></li>
-          <li><span aria-current="page" lang={CATALOG_LANG} dir="auto">{product.title}</span></li>
+          <li><Link href={`/c/${product.categorySlug}`} lang={product.categoryLocale} dir="auto">{product.category}</Link></li>
+          <li><span aria-current="page" lang={product.locale} dir="auto">{product.title}</span></li>
         </ol>
       </nav>
 
       <section className={`pdp pdp--${isBook ? "book" : "object"}`}>
         <div className="pdp__gallery">
-          <ProductVisual slug={product.slug} title={product.title} variant={isBook ? "cover" : "object"} byline={isBook ? product.specifications.find((spec) => spec.label === "Author")?.value : undefined} />
+          <ProductVisual slug={product.slug} title={product.title} lang={product.locale} variant={isBook ? "cover" : "object"} byline={isBook ? product.specifications.find((spec) => spec.label === "Author")?.value : undefined} />
         </div>
 
         <div className="pdp__buy">
           <p className="t-caption" lang={CATALOG_LANG} dir="auto">{product.brand}</p>
-          <h1 className="t-h1" lang={CATALOG_LANG} dir="auto">{product.title}</h1>
-          {lead ? <p className="pdp__lead" lang={CATALOG_LANG} dir="auto">{lead}</p> : null}
+          <h1 className="t-h1" lang={product.locale} dir="auto">{product.title}</h1>
+          {lead ? <p className="pdp__lead" lang={product.locale} dir="auto">{lead}</p> : null}
           {product.reviewCount ? (
             <p className="pdp__rating" aria-label={plural(t.pdp.ratingLabel, product.reviewCount, intl, { rating: product.rating.toFixed(1) })}>
               <StarIcon /><strong>{product.rating.toFixed(1)}</strong><span>{plural(t.pdp.reviews, product.reviewCount, intl)}</span>
@@ -75,7 +75,7 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
 
           <p className="pdp__price">
             <strong>{selected ? formatMoney(selected.price, intl) : t.pdp.unavailable}</strong>
-            {selected?.listPrice && saving ? <><s>{formatMoney(selected.listPrice, intl)}</s><span className="pdp__saving">{format(t.pdp.youSave, { amount: formatMoney(saving, intl) })}</span></> : null}
+            {selected?.listPrice && saving ? <><s>{formatMoney(selected.listPrice, intl)}</s><span className="pdp__saving">{format(t.pdp.youSave, { amount: isolate(formatMoney(saving, intl)) })}</span></> : null}
           </p>
 
           {product.variants.length > 1 ? (
@@ -116,7 +116,7 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
         {more ? (
           <section aria-labelledby="pdp-details">
             <h2 id="pdp-details" className="t-h2">{t.pdp.details}</h2>
-            <p className="t-body" lang={CATALOG_LANG} dir="auto">{more}</p>
+            <p className="t-body" lang={product.locale} dir="auto">{more}</p>
           </section>
         ) : null}
         {product.specifications.length ? (
@@ -132,6 +132,13 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
           <p className="t-body">{t.pdp.deliveryReturnsBody}</p>
         </section>
       </div>
+
+      {data.relationships.map((group) => (
+        <section className="pdp__more" key={group.type} aria-labelledby={`pdp-related-${group.type}`}>
+          <h2 id={`pdp-related-${group.type}`} className="t-h2">{t.related[group.type]}</h2>
+          <ProductGrid products={group.items.map((item) => item.product)} notes={Object.fromEntries(group.items.map((item) => [item.product.id, item.reason]))} />
+        </section>
+      ))}
 
       {recommendations.length ? (
         <section className="pdp__more" aria-labelledby="pdp-more">

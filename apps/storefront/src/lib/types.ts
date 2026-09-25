@@ -19,9 +19,11 @@ export type ProductCardModel = {
   /** Presentation family, e.g. "book"; changes layout only. */
   kind: string;
   highlights: Spec[];
+  /** Language the title is actually in (the requested one, or English as fallback). */
+  locale: string;
 };
 
-export type Category = { id: string; slug: string; name: string; parentId: string | null };
+export type Category = { id: string; slug: string; name: string; parentId: string | null; locale: string };
 export type ProductRail = { id: string; title: string; products: ProductCardModel[] };
 export type HomeModel = {
   navigation: Category[];
@@ -32,11 +34,13 @@ export type HomeModel = {
 
 export type Variant = { id: string; sku: string; name: string; price: Money; listPrice: Money | null; availabilityHint: string };
 export type ProductAsset = { id: string; type: string; url: string; mimeType: string; width: number | null; height: number | null; sizeBytes: number | null; integrity: string | null; sortOrder: number };
-export type ProductDetail = { id: string; slug: string; title: string; brand: string; description: string; category: string; categorySlug: string; kind: string; specifications: Spec[]; variants: Variant[]; assets: ProductAsset[]; rating: number; reviewCount: number };
-export type StorefrontProduct = { product: ProductDetail; recommendations: ProductCardModel[]; isDegraded: boolean };
+export type ProductDetail = { id: string; slug: string; title: string; brand: string; description: string; category: string; categorySlug: string; categoryLocale: string; locale: string; seoTitle: string | null; seoDescription: string | null; kind: string; specifications: Spec[]; variants: Variant[]; assets: ProductAsset[]; rating: number; reviewCount: number };
+export type RelatedProduct = { product: ProductCardModel; reason: string };
+export type RelationshipGroup = { type: "accessory" | "compatible" | "complementary" | "alternative" | "upgrade" | "frequentlyBoughtWith"; items: RelatedProduct[] };
+export type StorefrontProduct = { product: ProductDetail; recommendations: ProductCardModel[]; isDegraded: boolean; relationships: RelationshipGroup[] };
 export type FacetValue = { value: string; count: number };
 export type ProductPage = { items: ProductCardModel[]; page: number; pageSize: number; totalCount: number; totalPages: number; brands: FacetValue[] };
-export type Suggestion = { type: "product" | "category"; value: string; slug: string | null };
+export type Suggestion = { type: "product" | "category"; value: string; slug: string | null; locale: string };
 
 export type CartItem = { variantId: string; productId: string; slug: string; title: string; variant: string; image: ImageAsset | null; quantity: number; unitPrice: Money; lineTotal: Money; availabilityHint: string };
 export type Cart = { cartId: string; totalQuantity: number; subtotal: Money; items: CartItem[]; version: string };
