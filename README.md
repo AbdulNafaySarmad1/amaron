@@ -27,6 +27,8 @@ npm --prefix apps/storefront run dev
 
 The storefront listens on `http://localhost:3000`. Its checks are `npm --prefix apps/storefront run lint`, `npm --prefix apps/storefront run typecheck`, `npm --prefix apps/storefront run test`, and `npm --prefix apps/storefront run build`. The .NET solution does not run these frontend checks.
 
+With the stack running, `node tests/e2e/api-smoke.mjs` walks catalog, cart, checkout and orders through the API; `node tests/e2e/storefront-render.mjs` checks server-rendered language, direction, SEO tags and security headers; `node tests/e2e/accessibility.mjs` runs axe-core (WCAG 2.2 A/AA) and overflow checks at phone and desktop widths in every language using headless Chromium (`CHROME` points at the binary). `API_URL` and `APP_URL` override the local defaults.
+
 The operations console listens on `http://localhost:3001`. Run the same checks with `apps/admin` as the npm prefix. It uses a separate `admin-web` OIDC client and exposes only an allowlisted BFF proxy to policy-protected operations endpoints.
 
 The storefront uses a same-origin OIDC authorization-code-plus-PKCE BFF. Access and refresh tokens remain in Redis; the browser receives an opaque HttpOnly session cookie and sends a session CSRF token for mutations. The API validates bearer JWTs locally and maps `(iss, sub)` to an internal `ApplicationUser`. Development headers work only when both Development and `ALLOW_DEVELOPMENT_IDENTITY=true`; never expose them as production authentication.

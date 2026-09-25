@@ -95,7 +95,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
               </div>
             </>
           ) : (
-            <a className="header-action" href={`/api/auth/login?returnTo=${encodeURIComponent(pathname)}`}><UserIcon /><span className="header-action__label">{t.nav.signIn}</span></a>
+            <a className="header-action" href={`/api/auth/login?returnTo=${encodeURIComponent(pathname)}`} aria-label={t.nav.signIn}><UserIcon /><span className="header-action__label">{t.nav.signIn}</span></a>
           )}
           <BagButton className="header-action header-action--bag" />
         </div>

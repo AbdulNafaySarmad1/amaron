@@ -30,6 +30,9 @@ const nextConfig: NextConfig = {
     return [{ source: "/(.*)", headers: [
       { key: "Content-Security-Policy", value: contentSecurityPolicy },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      // Browsers honour HSTS only over HTTPS, so this is inert in local HTTP development. No includeSubDomains/preload:
+      // those bind sibling services on the domain and are the operator's decision.
+      { key: "Strict-Transport-Security", value: "max-age=31536000" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" }

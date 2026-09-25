@@ -63,9 +63,11 @@ export function ProductCard({ product, onAdd, priority = false, note, onSelect }
             {product.highlights.map((spec) => <div key={spec.label}><dt className="sr-only">{spec.label}</dt><dd>{specText(spec)}</dd></div>)}
           </dl>
         ) : null}
-        <p className="product-card__rating" aria-label={plural(t.product.rating, product.reviewCount, intl, { rating: product.rating.toFixed(1) })}>
-          <StarIcon /><span>{product.rating.toFixed(1)}</span><span className="product-card__reviews">({product.reviewCount})</span>
-        </p>
+        {product.reviewCount ? (
+          <p className="product-card__rating" aria-label={plural(t.product.rating, product.reviewCount, intl, { rating: product.rating.toFixed(1) })}>
+            <StarIcon /><span>{product.rating.toFixed(1)}</span><span className="product-card__reviews">({product.reviewCount})</span>
+          </p>
+        ) : null}
         <div className="product-card__buy">
           <p className="product-card__price">
             <strong>{formatMoney(product.price, intl)}</strong>

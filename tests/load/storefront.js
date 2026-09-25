@@ -2,7 +2,6 @@ import http from "k6/http";
 import { check } from "k6";
 
 const baseUrl = __ENV.BASE_URL || "http://localhost:8080";
-const variantId = "00000000-0000-0000-0000-000000001000";
 
 export const options = {
   scenarios: {
@@ -46,6 +45,15 @@ export const options = {
   },
 };
 
+// Cart writes use a product that is sellable right now: the API refuses stock checkout could not allocate, and
+// earlier orders on a development database can sell out any fixed seed product.
+export function setup() {
+  const response = http.get(`${baseUrl}/api/catalog/products?category=electronics&available=true&pageSize=1`);
+  const product = response.json("items.0");
+  if (!product) throw new Error("No sellable product to add to carts.");
+  return { slug: product.slug, variantId: product.defaultVariantId };
+}
+
 export function homepage() {
   const response = http.get(`${baseUrl}/api/storefront/home`);
   check(response, { "homepage returns 200": (result) => result.status === 200 });
@@ -62,13 +70,13 @@ export function search() {
   check(response, { "search returns 200": (result) => result.status === 200 });
 }
 
-export function mixedCart() {
+export function mixedCart({ slug, variantId }) {
   const headers = {
     "Content-Type": "application/json",
     "X-Customer-Id": `load-${__VU}`,
   };
-  const browse = http.get(`${baseUrl}/api/catalog/products/noise-cancelling-headphones`);
-  const cart = http.put(`${baseUrl}/api/cart/items`, JSON.stringify({ variantId, quantity: (__ITER % 3) + 1 }), { headers });
+  const browse = http.get(`${baseUrl}/api/catalog/products/${slug}`);
+  const cart = http.put(`${baseUrl}/api/cart/items`, JSON.stringify({ variantId, quantity: 1 }), { headers });
   check(browse, { "catalog read returns 200": (result) => result.status === 200 });
   check(cart, { "cart mutation returns 200": (result) => result.status === 200 });
 }
