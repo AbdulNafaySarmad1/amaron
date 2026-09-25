@@ -1,11 +1,22 @@
-import { Untranslated } from "@/components/i18n/untranslated";
 import type { Metadata } from "next";
 import { OrderList } from "@/components/orders/order-list";
-import { redirectToLogin } from "@/i18n/server";
+import { currentDictionary, redirectToLogin } from "@/i18n/server";
 import { publicSession } from "@/lib/auth/session";
 
-export const metadata: Metadata = { title: "Orders", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await currentDictionary()).orders.title, robots: { index: false } };
+}
+
 export default async function OrdersPage() {
   if (!await publicSession()) await redirectToLogin("/orders");
-  return <Untranslated><main className="orders-page"><header><p className="eyebrow">Order archive</p><h1>Your orders</h1><p>Receipts, status, and the details worth keeping.</p></header><OrderList /></main></Untranslated>;
+  const t = await currentDictionary();
+  return (
+    <main className="page orders-page">
+      <header className="page__header">
+        <h1 className="t-h1">{t.orders.title}</h1>
+        <p className="t-body page__lede">{t.orders.lede}</p>
+      </header>
+      <OrderList />
+    </main>
+  );
 }

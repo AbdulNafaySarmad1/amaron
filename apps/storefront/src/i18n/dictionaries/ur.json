@@ -7,7 +7,10 @@
     "categories": "زمرے",
     "shopBySpace": "شعبوں کے لحاظ سے خریداری",
     "saved": "محفوظ",
-    "savedCount": "محفوظ، {count} اشیاء",
+    "savedCount": {
+      "one": "محفوظ، {count} چیز",
+      "other": "محفوظ، {count} اشیاء"
+    },
     "account": "اکاؤنٹ",
     "signIn": "سائن ان",
     "signedInAs": "بطور سائن ان",
@@ -16,7 +19,10 @@
     "profile": "پروفائل اور سیکیورٹی",
     "signOut": "سائن آؤٹ",
     "bag": "بیگ",
-    "bagCount": "بیگ، {count} اشیاء",
+    "bagCount": {
+      "one": "بیگ، {count} چیز",
+      "other": "بیگ، {count} اشیاء"
+    },
     "bagSignIn": "بیگ، استعمال کے لیے سائن ان کریں",
     "primary": "مرکزی نیویگیشن"
   },
@@ -54,7 +60,10 @@
     "viewCart": "بیگ دیکھیں",
     "added": "آپ کے بیگ میں شامل ہو گیا",
     "removed": "بیگ سے ہٹا دیا گیا",
-    "items": "{count} اشیاء",
+    "items": {
+      "one": "{count} چیز",
+      "other": "{count} اشیاء"
+    },
     "close": "بیگ بند کریں",
     "loading": "آپ کا بیگ لوڈ ہو رہا ہے…",
     "loadError": "آپ کا بیگ لوڈ نہیں ہو سکا۔",
@@ -76,7 +85,10 @@
     "save": "{title} بعد کے لیے محفوظ کریں",
     "unsave": "{title} کو محفوظ اشیاء سے ہٹائیں",
     "view": "{title} دیکھیں",
-    "rating": "{count} جائزوں سے 5 میں سے {rating} ستارے",
+    "rating": {
+      "one": "{count} جائزے سے 5 میں سے {rating} ستارے",
+      "other": "{count} جائزوں سے 5 میں سے {rating} ستارے"
+    },
     "editorsPick": "ایڈیٹر کا انتخاب"
   },
   "saved": {
@@ -114,7 +126,10 @@
     "keepBrowsing": "دیکھنا جاری رکھیں"
   },
   "category": {
-    "count": "{count} مصنوعات",
+    "count": {
+      "one": "{count} پروڈکٹ",
+      "other": "{count} مصنوعات"
+    },
     "searchIn": "{category} میں تلاش کریں",
     "within": "{category} میں",
     "removeScope": "پورے اسٹور میں تلاش کریں",
@@ -153,5 +168,110 @@
     "home": "ہوم",
     "search": "تلاش",
     "subcategories": "{category} کے اندر دیکھیں"
+  },
+  "pdp": {
+    "reviews": {
+      "one": "{count} جائزہ",
+      "other": "{count} جائزے"
+    },
+    "ratingLabel": {
+      "one": "{count} جائزے سے 5 میں سے {rating} درجہ",
+      "other": "{count} جائزوں سے 5 میں سے {rating} درجہ"
+    },
+    "youSave": "آپ {amount} بچاتے ہیں",
+    "option": "ایک اختیار منتخب کریں",
+    "viewBag": "اپنا بیگ دیکھیں",
+    "save": "محفوظ کریں",
+    "saved": "محفوظ ہو گیا",
+    "unavailable": "دستیاب نہیں",
+    "returnsTitle": "30 دن میں واپسی",
+    "returnsBody": "ارادہ بدل جائے تو بغیر سوال کے واپسی۔",
+    "deliveryTitle": "ٹریک ہونے والی ترسیل",
+    "deliveryBody": "ترسیل کی تاریخ چیک آؤٹ پر تصدیق ہوتی ہے۔",
+    "supportTitle": "حقیقی مدد",
+    "supportBody": "ضرورت پڑنے پر مددگار لوگ۔",
+    "details": "تفصیل",
+    "specifications": "خصوصیات",
+    "deliveryReturns": "ترسیل اور واپسی",
+    "deliveryReturnsBody": "ہر آرڈر ٹریک ہوتا ہے اور بغیر فالتو پیکنگ کے بھیجا جاتا ہے۔ ادائیگی سے پہلے آپ اپنے پتے کے لیے ترسیل کی تاریخ دیکھ لیں گے، اور ترسیل کے 30 دن کے اندر واپس کر سکتے ہیں۔",
+    "moreIn": "{category} میں مزید"
+  },
+  "checkout": {
+    "title": "چیک آؤٹ",
+    "secure": "محفوظ چیک آؤٹ",
+    "backToStore": "اسٹور پر واپس جائیں",
+    "preparing": "چیک آؤٹ تیار ہو رہا ہے…",
+    "loadErrorTitle": "آپ کا بیگ لوڈ نہیں ہو سکا۔",
+    "loadErrorBody": "تھوڑی دیر بعد دوبارہ کوشش کریں۔",
+    "retry": "دوبارہ کوشش کریں",
+    "emptyTitle": "آپ کا بیگ خالی ہے",
+    "emptyBody": "پہلے کچھ شامل کریں، پھر یہاں واپس آئیں۔",
+    "delivery": "ترسیل",
+    "payment": "ادائیگی",
+    "review": "جائزہ اور ادائیگی",
+    "name": "پورا نام",
+    "line1": "گلی کا پتہ",
+    "line2": "اپارٹمنٹ، سویٹ وغیرہ",
+    "optional": "اختیاری",
+    "city": "شہر",
+    "region": "صوبہ یا علاقہ",
+    "postalCode": "پوسٹل کوڈ",
+    "country": "ملک",
+    "method": "ادائیگی کا طریقہ",
+    "methodCard": "کارڈ",
+    "methodRaast": "راست بینک ادائیگی",
+    "methodBankTransfer": "بینک ٹرانسفر",
+    "methodCashOnDelivery": "کیش آن ڈیلیوری",
+    "methodInstallment": "قسطیں",
+    "testOutcome": "آزمائشی ادائیگی کا نتیجہ",
+    "testOutcomeHint": "آزمائشی ادائیگی فراہم کنندہ۔ یہاں کبھی کارڈ نمبر درج نہ کریں۔",
+    "outcomeApprove": "منظور کریں",
+    "outcomeVerify": "تصدیق طلب کریں",
+    "outcomeDecline": "مسترد کریں",
+    "outcomePending": "زیرِ التوا رکھیں",
+    "verifyTitle": "آپ کے بینک نے اضافی تصدیق طلب کی ہے۔",
+    "verifyBody": "جاری رکھنے کے لیے فراہم کنندہ کا مرحلہ مکمل کریں۔",
+    "verify": "تصدیق مکمل کریں",
+    "errorTitle": "ہم آرڈر کی تصدیق نہیں کر سکے۔",
+    "errorUnknown": "ہم تصدیق نہیں کر سکے کہ آرڈر ہوا یا نہیں۔ انہی تفصیلات کے ساتھ دوبارہ کوشش کرنا محفوظ ہے۔",
+    "errorPayment": "آپ کی ادائیگی مکمل نہیں ہوئی۔ دوبارہ کوشش کریں یا کوئی اور طریقہ منتخب کریں۔",
+    "pay": "{amount} ادا کریں",
+    "placing": "آپ کا آرڈر دیا جا رہا ہے…",
+    "assurance": "آرڈر دینے سے پہلے اسٹاک اور قیمتیں ایک بار پھر چیک کی جاتی ہیں۔",
+    "summary": "آپ کا آرڈر",
+    "quantity": "تعداد {count}",
+    "summaryNote": "ترسیل اور ٹیکس حتمی تصدیق میں شامل ہیں۔"
+  },
+  "orders": {
+    "title": "آپ کے آرڈرز",
+    "lede": "رسیدیں، صورتحال اور اہم تفصیلات۔",
+    "loading": "آپ کے آرڈرز تلاش ہو رہے ہیں…",
+    "loadError": "آپ کے آرڈرز لوڈ نہیں ہو سکے۔",
+    "loadErrorBody": "صفحہ دوبارہ لوڈ کریں۔",
+    "emptyTitle": "ابھی کوئی آرڈر نہیں",
+    "emptyBody": "جب آپ آرڈر دیں گے، ہر تفصیل یہاں ملے گی۔",
+    "items": {
+      "one": "{count} چیز",
+      "other": "{count} اشیاء"
+    },
+    "view": "آرڈر دیکھیں",
+    "confirmedTitle": "آرڈر کی تصدیق ہو گئی",
+    "confirmedBody": "شکریہ۔ ہم نے آپ کی اشیاء محفوظ کر لی ہیں اور تیاری شروع کر دی ہے۔",
+    "paymentConfirmed": "ادائیگی کی تصدیق ہو گئی۔ آپ کا آرڈر تیار کیا جا رہا ہے۔",
+    "nextTitle": "آگے کیا ہوگا",
+    "nextPrepare": "ہم آپ کا آرڈر تیار اور پیک کریں گے۔",
+    "nextStatus": "اس کی صورتحال یہاں تازہ ہوتی رہے گی۔",
+    "placedOn": "{date} کو دیا گیا",
+    "number": "آرڈر {number}",
+    "details": "آرڈر کی تفصیل",
+    "all": "تمام آرڈرز",
+    "keepBrowsing": "خریداری جاری رکھیں",
+    "notFound": "ہمیں یہ آرڈر نہیں ملا۔",
+    "back": "اپنے آرڈرز پر واپس جائیں",
+    "loadingOne": "آرڈر کی تفصیل تیار ہو رہی ہے…",
+    "statusPendingPayment": "ادائیگی کا انتظار",
+    "statusConfirmed": "تصدیق شدہ",
+    "statusPlaced": "دیا گیا",
+    "statusCancelled": "منسوخ"
   }
 }

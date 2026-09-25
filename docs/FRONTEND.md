@@ -22,6 +22,12 @@ Each category has its own page at `/{locale}/c/{slug}`; results always come from
 
 Products carry a `kind` (presentation only, e.g. `book` renders a cover) and ordered attributes. Attributes flagged as highlights (at most three) summarise the product on cards; the full list is the product's specifications. Nothing in React branches on a specific product type beyond choosing that presentation.
 
+Counted strings ("3 items", Russian "2 товара", Arabic dual forms) are plural-form objects in the dictionaries and are rendered with `plural()`, which uses `Intl.PluralRules`; never build them with `format()`.
+
+## Product page, checkout and confirmation
+
+The product page's first viewport holds only what a purchase decision needs: name, one-line proposition, rating, price and saving, options, availability, Add to bag / Save, and the store's delivery, returns and support promises. Details, specifications and delivery follow below; further products are labelled "More in {category}" because they are same-category, not relationship-based. Checkout swaps the header for a minimal one (wordmark, "Secure checkout", back to store) and hides the bottom nav: no search, categories or recommendations compete with the order. The confirmation leads with reassurance and next steps and shows no products for sale.
+
 ## Guests and account-only actions
 
 Browsing, search and Saved work without an account. Account-only actions (the bag today, reviews later) call `useRequireSignIn()` from `sign-in-gate.tsx`; for guests it opens a prompt explaining why, with sign-in returning to the same page and query. Sign-out returns to the homepage in the language the shopper was using.

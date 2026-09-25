@@ -4,3 +4,9 @@ import type { Spec } from "./types";
 export function specText({ label, value }: Spec) {
   return /^[\d.,\s]+$/.test(value) ? `${label} ${value}` : value;
 }
+
+/** First sentence as the product's proposition; anything after it belongs in Details. */
+export function splitDescription(description: string) {
+  const [lead = "", ...rest] = description.trim().split(/(?<=[.!?])\s+/);
+  return { lead, more: rest.join(" ") };
+}

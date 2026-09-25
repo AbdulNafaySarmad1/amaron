@@ -1,4 +1,4 @@
-import { Untranslated } from "@/components/i18n/untranslated";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProductDetailView } from "@/components/product/product-detail";
 import { ApiError, serverGet } from "@/lib/api";
@@ -6,14 +6,20 @@ import type { StorefrontProduct } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  let data: StorefrontProduct;
+async function loadProduct(slug: string) {
   try {
-    data = await serverGet<StorefrontProduct>(`/api/storefront/products/${encodeURIComponent(slug)}`, 60);
+    return await serverGet<StorefrontProduct>(`/api/storefront/products/${encodeURIComponent(slug)}`, 60);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-  return <Untranslated><ProductDetailView data={data} /></Untranslated>;
+}
+
+export async function generateMetadata({ params }: PageProps<"/[lang]/products/[slug]">): Promise<Metadata> {
+  const { product } = await loadProduct((await params).slug);
+  return { title: product.title, description: product.description };
+}
+
+export default async function ProductPage({ params }: PageProps<"/[lang]/products/[slug]">) {
+  return <ProductDetailView data={await loadProduct((await params).slug)} />;
 }

@@ -7,7 +7,10 @@
     "categories": "Categories",
     "shopBySpace": "Shop by space",
     "saved": "Saved",
-    "savedCount": "Saved, {count} items",
+    "savedCount": {
+      "one": "Saved, {count} item",
+      "other": "Saved, {count} items"
+    },
     "account": "Account",
     "signIn": "Sign in",
     "signedInAs": "Signed in as",
@@ -16,7 +19,10 @@
     "profile": "Profile and security",
     "signOut": "Sign out",
     "bag": "Bag",
-    "bagCount": "Bag, {count} items",
+    "bagCount": {
+      "one": "Bag, {count} item",
+      "other": "Bag, {count} items"
+    },
     "bagSignIn": "Bag, sign in to use",
     "primary": "Primary"
   },
@@ -54,7 +60,10 @@
     "viewCart": "View bag",
     "added": "Added to your bag",
     "removed": "Removed from your bag",
-    "items": "{count} items",
+    "items": {
+      "one": "{count} item",
+      "other": "{count} items"
+    },
     "close": "Close bag",
     "loading": "Loading your bag…",
     "loadError": "Your bag could not be loaded.",
@@ -76,7 +85,10 @@
     "save": "Save {title} for later",
     "unsave": "Remove {title} from saved items",
     "view": "View {title}",
-    "rating": "{rating} out of 5 stars from {count} reviews",
+    "rating": {
+      "one": "{rating} out of 5 stars from {count} review",
+      "other": "{rating} out of 5 stars from {count} reviews"
+    },
     "editorsPick": "Editor's pick"
   },
   "saved": {
@@ -114,7 +126,10 @@
     "keepBrowsing": "Keep browsing"
   },
   "category": {
-    "count": "{count} products",
+    "count": {
+      "one": "{count} product",
+      "other": "{count} products"
+    },
     "searchIn": "Search {category}",
     "within": "In {category}",
     "removeScope": "Search everywhere instead",
@@ -153,5 +168,110 @@
     "home": "Home",
     "search": "Search",
     "subcategories": "Browse within {category}"
+  },
+  "pdp": {
+    "reviews": {
+      "one": "{count} review",
+      "other": "{count} reviews"
+    },
+    "ratingLabel": {
+      "one": "Rated {rating} out of 5 from {count} review",
+      "other": "Rated {rating} out of 5 from {count} reviews"
+    },
+    "youSave": "You save {amount}",
+    "option": "Choose an option",
+    "viewBag": "View your bag",
+    "save": "Save",
+    "saved": "Saved",
+    "unavailable": "Unavailable",
+    "returnsTitle": "30-day returns",
+    "returnsBody": "Change your mind, no awkward questions.",
+    "deliveryTitle": "Tracked delivery",
+    "deliveryBody": "Your delivery date is confirmed at checkout.",
+    "supportTitle": "Real support",
+    "supportBody": "Helpful people, when you need one.",
+    "details": "Details",
+    "specifications": "Specifications",
+    "deliveryReturns": "Delivery and returns",
+    "deliveryReturnsBody": "Every order is tracked and packed without excess. You'll see the delivery date for your address before you pay, and you can return it within 30 days of delivery.",
+    "moreIn": "More in {category}"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "secure": "Secure checkout",
+    "backToStore": "Back to the store",
+    "preparing": "Preparing checkout…",
+    "loadErrorTitle": "We couldn't load your bag.",
+    "loadErrorBody": "Try again in a moment.",
+    "retry": "Try again",
+    "emptyTitle": "Your bag is empty",
+    "emptyBody": "Add something first, then come back here.",
+    "delivery": "Delivery",
+    "payment": "Payment",
+    "review": "Review and pay",
+    "name": "Full name",
+    "line1": "Street address",
+    "line2": "Apartment, suite, etc.",
+    "optional": "Optional",
+    "city": "City",
+    "region": "State or region",
+    "postalCode": "Postal code",
+    "country": "Country",
+    "method": "Payment method",
+    "methodCard": "Card",
+    "methodRaast": "Raast bank payment",
+    "methodBankTransfer": "Bank transfer",
+    "methodCashOnDelivery": "Cash on delivery",
+    "methodInstallment": "Instalments",
+    "testOutcome": "Test payment outcome",
+    "testOutcomeHint": "Development payment provider. Never enter card numbers here.",
+    "outcomeApprove": "Approve",
+    "outcomeVerify": "Ask for verification",
+    "outcomeDecline": "Decline",
+    "outcomePending": "Leave pending",
+    "verifyTitle": "Your bank asked for additional verification.",
+    "verifyBody": "Complete the provider's step to continue.",
+    "verify": "Complete verification",
+    "errorTitle": "We couldn't confirm the order.",
+    "errorUnknown": "We couldn't confirm whether the order was placed. Trying again with the same details is safe.",
+    "errorPayment": "Your payment wasn't completed. Try again or choose another method.",
+    "pay": "Pay {amount}",
+    "placing": "Placing your order…",
+    "assurance": "Stock and prices are checked once more before your order is placed.",
+    "summary": "Your order",
+    "quantity": "Qty {count}",
+    "summaryNote": "Delivery and taxes are included in the final confirmation."
+  },
+  "orders": {
+    "title": "Your orders",
+    "lede": "Receipts, status and the details worth keeping.",
+    "loading": "Looking up your orders…",
+    "loadError": "We couldn't load your orders.",
+    "loadErrorBody": "Try refreshing the page.",
+    "emptyTitle": "No orders yet",
+    "emptyBody": "When you place one, you'll find every detail here.",
+    "items": {
+      "one": "{count} item",
+      "other": "{count} items"
+    },
+    "view": "View order",
+    "confirmedTitle": "Order confirmed",
+    "confirmedBody": "Thank you. We've reserved your items and started preparing them.",
+    "paymentConfirmed": "Payment confirmed. Your order is on its way to being prepared.",
+    "nextTitle": "What happens next",
+    "nextPrepare": "We prepare and pack your order.",
+    "nextStatus": "Its status updates here as it moves.",
+    "placedOn": "Placed {date}",
+    "number": "Order {number}",
+    "details": "Order details",
+    "all": "All orders",
+    "keepBrowsing": "Keep browsing",
+    "notFound": "We couldn't find that order.",
+    "back": "Back to your orders",
+    "loadingOne": "Preparing your order details…",
+    "statusPendingPayment": "Awaiting payment",
+    "statusConfirmed": "Confirmed",
+    "statusPlaced": "Placed",
+    "statusCancelled": "Cancelled"
   }
 }

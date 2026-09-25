@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import { FilterDisclosure } from "@/components/catalog/filter-disclosure";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Link } from "@/components/providers/locale-provider";
-import { CATALOG_LANG, localizePath } from "@/i18n/config";
-import { format } from "@/i18n/dictionary";
+import { CATALOG_LANG, intlLocale, localizePath } from "@/i18n/config";
+import { format, plural } from "@/i18n/dictionary";
 import { currentDictionary, currentLocale } from "@/i18n/server";
 import { serverGet } from "@/lib/api";
 import { categoryPath, categoryTrail, childCategories } from "@/lib/categories";
@@ -71,7 +71,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
 
       <header className="category-page__header">
         <h1 className="t-h1">{q ? format(c.resultsFor, { query: q }) : name}</h1>
-        <p className="t-meta">{q ? `${format(c.within, { category: category.name })} · ` : null}{format(c.count, { count: results.totalCount })}</p>
+        <p className="t-meta">{q ? `${format(c.within, { category: category.name })} · ` : null}{plural(c.count, results.totalCount, intlLocale[locale])}</p>
         <form className="category-search" role="search" action={here}>
           <label className="sr-only" htmlFor="category-search">{format(c.searchIn, { category: category.name })}</label>
           <input id="category-search" name="q" type="search" defaultValue={q} placeholder={format(c.searchIn, { category: category.name })} autoComplete="off" enterKeyHint="search" />

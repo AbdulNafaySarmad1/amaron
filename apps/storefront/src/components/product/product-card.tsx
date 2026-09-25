@@ -6,7 +6,7 @@ import { Link, useIntlLocale, useT } from "@/components/providers/locale-provide
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
 import { CATALOG_LANG } from "@/i18n/config";
-import { format } from "@/i18n/dictionary";
+import { format, plural } from "@/i18n/dictionary";
 import { formatMoney } from "@/lib/api";
 import { specText } from "@/lib/specs";
 import type { ProductCardModel } from "@/lib/types";
@@ -62,7 +62,7 @@ export function ProductCard({ product, onAdd, priority = false }: { product: Pro
             {product.highlights.map((spec) => <div key={spec.label}><dt className="sr-only">{spec.label}</dt><dd>{specText(spec)}</dd></div>)}
           </dl>
         ) : null}
-        <p className="product-card__rating" aria-label={format(t.product.rating, { rating: product.rating, count: product.reviewCount })}>
+        <p className="product-card__rating" aria-label={plural(t.product.rating, product.reviewCount, intl, { rating: product.rating.toFixed(1) })}>
           <StarIcon /><span>{product.rating.toFixed(1)}</span><span className="product-card__reviews">({product.reviewCount})</span>
         </p>
         <div className="product-card__buy">

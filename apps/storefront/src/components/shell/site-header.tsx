@@ -1,12 +1,12 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { BagIcon, ChevronIcon, HeartIcon, SearchIcon, UserIcon } from "@/components/icons";
-import { Link, useLocale, useT } from "@/components/providers/locale-provider";
+import { BagIcon, ChevronIcon, HeartIcon, LockIcon, SearchIcon, UserIcon } from "@/components/icons";
+import { Link, useIntlLocale, useLocale, useT } from "@/components/providers/locale-provider";
 import { useStorefrontSession } from "@/components/providers/storefront-provider";
 import { PreferencesControl } from "@/components/shell/preferences";
 import { useRequireSignIn } from "@/components/shell/sign-in-gate";
-import { format } from "@/i18n/dictionary";
+import { format, plural } from "@/i18n/dictionary";
 import { CATALOG_LANG, stripLocale } from "@/i18n/config";
 import { browserRequest } from "@/lib/api";
 import { categoryPath } from "@/lib/categories";
@@ -33,6 +33,7 @@ export function useCategoryScope(categories: Category[]) {
 
 export function SiteHeader({ categories }: { categories: Category[] }) {
   const t = useT();
+  const intl = useIntlLocale();
   const locale = useLocale();
   const path = useAppPath();
   const pathname = usePathname();
@@ -45,6 +46,19 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
   async function logout() {
     const result = await browserRequest<{ logoutUrl: string }>(`/api/auth/logout?locale=${locale}`, { method: "POST" });
     window.location.assign(result.logoutUrl);
+  }
+
+  // Checkout stops selling: no search, categories or saved items competing with the order.
+  if (path.startsWith("/checkout")) {
+    return (
+      <header className="site-header site-header--checkout">
+        <div className="site-header__inner">
+          <Link className="wordmark" href="/" aria-label="Amaron"><span>A</span>maron</Link>
+          <p className="t-meta checkout-badge"><LockIcon />{t.checkout.secure}</p>
+          <Link className="text-button" href="/">{t.checkout.backToStore}</Link>
+        </div>
+      </header>
+    );
   }
 
   return (
@@ -66,7 +80,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
         <div className="header-actions">
           <button type="button" className="header-action header-action--search" onClick={openSearch} aria-label={t.search.trigger}><SearchIcon /></button>
           <PreferencesControl />
-          <Link className="header-action header-action--saved" href="/saved" aria-current={path === "/saved" ? "page" : undefined} aria-label={format(t.nav.savedCount, { count: savedCount })}>
+          <Link className="header-action header-action--saved" href="/saved" aria-current={path === "/saved" ? "page" : undefined} aria-label={plural(t.nav.savedCount, savedCount, intl)}>
             <HeartIcon /><span className="header-action__label">{t.nav.saved}</span>{savedCount ? <b>{savedCount}</b> : null}
           </Link>
           {session.authenticated ? (
@@ -109,12 +123,13 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
 /** The bag opens the drawer for signed-in shoppers; guests are told why it needs an account, and stay put. */
 export function BagButton({ className }: { className: string }) {
   const t = useT();
+  const intl = useIntlLocale();
   const session = useStorefrontSession();
   const requireSignIn = useRequireSignIn();
   const openCart = useCartStore((state) => state.open);
   const count = useCartStore((state) => state.cart?.totalQuantity ?? 0);
   const content = <><BagIcon /><span className="header-action__label">{t.nav.bag}</span>{count ? <b>{count}</b> : null}</>;
   return session.authenticated
-    ? <button type="button" className={className} onClick={() => void openCart()} aria-label={format(t.nav.bagCount, { count })}>{content}</button>
+    ? <button type="button" className={className} onClick={() => void openCart()} aria-label={plural(t.nav.bagCount, count, intl)}>{content}</button>
     : <button type="button" className={className} onClick={() => requireSignIn("bag")} aria-haspopup="dialog" aria-label={t.nav.bagSignIn}>{content}</button>;
 }

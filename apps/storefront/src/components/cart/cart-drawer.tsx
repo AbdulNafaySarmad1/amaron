@@ -2,7 +2,7 @@
 
 import { Link, useIntlLocale, useLocale, useT } from "@/components/providers/locale-provider";
 import { CATALOG_LANG, localeDirection } from "@/i18n/config";
-import { format } from "@/i18n/dictionary";
+import { format, plural } from "@/i18n/dictionary";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { CloseIcon, MinusIcon, PlusIcon } from "@/components/icons";
@@ -58,7 +58,7 @@ export function CartDrawer() {
             transition={motionTokens.spring.drawer}
           >
             <header className="cart-drawer__header">
-              <div><p className="eyebrow">{format(t.cart.items, { count: cart?.totalQuantity ?? 0 })}</p><h2 id="cart-title">{t.cart.title}</h2></div>
+              <div><p className="eyebrow">{plural(t.cart.items, cart?.totalQuantity ?? 0, intl)}</p><h2 id="cart-title">{t.cart.title}</h2></div>
               <button ref={closeButton} className="icon-button" onClick={close} aria-label={t.cart.close}><CloseIcon /></button>
             </header>
             <div className="cart-drawer__body" aria-busy={isLoading}>
