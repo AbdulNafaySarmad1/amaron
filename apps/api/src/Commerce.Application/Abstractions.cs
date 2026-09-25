@@ -124,3 +124,10 @@ public interface IProductSearch
     /// <summary>Matches canonical text and, for a non-canonical locale, that locale's translated titles.</summary>
     IQueryable<ProductMatch> Match(string query, string locale);
 }
+
+/// <summary>Human-verification check for abuse-prone actions (Cloudflare Turnstile). Disabled when not configured.</summary>
+public interface IHumanVerification
+{
+    bool Enabled { get; }
+    Task<bool> VerifyAsync(string? token, CancellationToken cancellationToken);
+}

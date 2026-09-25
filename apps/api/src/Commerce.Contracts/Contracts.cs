@@ -12,6 +12,8 @@ public sealed record CategoryDto(Guid Id, string Slug, string Name, Guid? Parent
 public sealed record FacetValueDto(string Value, int Count);
 public sealed record ProductPageDto(IReadOnlyList<ProductCardDto> Items, int Page, int PageSize, int TotalCount, int TotalPages, IReadOnlyList<FacetValueDto> Brands);
 public sealed record SearchRequest(string? Query, string? Category, string? Brand, decimal? MinPrice, decimal? MaxPrice, decimal? MinimumRating, bool? Available, string? Sort, int Page = 1, int PageSize = 24, string? Locale = null);
+public sealed record SitemapEntryDto(string Slug, DateTimeOffset UpdatedAt);
+public sealed record SitemapPageDto(IReadOnlyList<SitemapEntryDto> Items, int Page, int PageSize, int TotalCount);
 public sealed record SuggestionDto(string Type, string Value, string? Slug, string Locale = "en");
 public sealed record BatchProductsRequest(IReadOnlyList<Guid> ProductIds);
 public sealed record ProductRailDto(string Id, string Title, IReadOnlyList<ProductCardDto> Products);

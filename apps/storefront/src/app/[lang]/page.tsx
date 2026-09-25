@@ -1,6 +1,10 @@
+import type { Metadata } from "next";
+import { Fragment } from "react";
 import { ArrowIcon } from "@/components/icons";
+import { JsonLd } from "@/components/seo/json-ld";
 import { HomeSearch } from "@/components/home/home-search";
 import { RecentlyExplored } from "@/components/home/recently-explored";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Link } from "@/components/providers/locale-provider";
 import { withLocale } from "@/i18n/config";
@@ -8,6 +12,7 @@ import { format } from "@/i18n/dictionary";
 import { currentDictionary, currentLocale } from "@/i18n/server";
 import { serverGet } from "@/lib/api";
 import { categoryPath, childCategories } from "@/lib/categories";
+import { alternates, organizationJsonLd } from "@/lib/seo";
 import type { HomeModel, ProductCardModel, ProductPage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +21,11 @@ const RAIL_SIZE = 4;
 
 /** Optional rails fail quietly: a slow query must never take the homepage down with it. */
 const optional = <T,>(promise: Promise<T>) => promise.catch(() => null);
+
+export async function generateMetadata(): Promise<Metadata> {
+  const [locale, t] = await Promise.all([currentLocale(), currentDictionary()]);
+  return { description: t.home.heroLede, alternates: alternates(locale, "/"), openGraph: { title: "Amaron", description: t.home.heroLede, locale } };
+}
 
 /** Few products per section, no repeats across sections, and nothing without real data behind it. */
 export default async function StorefrontPage() {
@@ -42,6 +52,7 @@ export default async function StorefrontPage() {
 
   return (
     <main className="home">
+      <JsonLd data={organizationJsonLd(locale)} />
       <section className="home-hero" aria-labelledby="home-title">
         <h1 id="home-title" className="t-display">{t.home.heroTitle}</h1>
         <p className="home-hero__lede">{t.home.heroLede}</p>
@@ -65,14 +76,17 @@ export default async function StorefrontPage() {
         </section>
       ) : null}
 
-      {rails.map((rail) => (
-        <section className="home-rail" key={rail.id} aria-labelledby={`home-${rail.id}`}>
+      {rails.map((rail, index) => (
+        <Fragment key={rail.id}>
+        <section className="home-rail" aria-labelledby={`home-${rail.id}`}>
           <header className="home-rail__head">
             <h2 id={`home-${rail.id}`} className="t-h2">{rail.title}</h2>
             {rail.href ? <Link className="text-link" href={rail.href}>{t.home.seeAll}</Link> : null}
           </header>
-          <ProductGrid products={rail.products} />
+          <ProductGrid list={`home:${rail.id}`} products={rail.products} />
         </section>
+        {index === 0 ? <AdSlot placement="editorial-after-section" label={t.ads.label} /> : null}
+        </Fragment>
       ))}
 
       <RecentlyExplored />

@@ -9,6 +9,7 @@ import { categoryPath } from "@/lib/categories";
 import { clearRecentSearches, readRecentSearches, rememberSearch } from "@/lib/recent-searches";
 import type { Category, Suggestion } from "@/lib/types";
 import { useSearchMode } from "@/store/search-store";
+import { track } from "@/lib/telemetry";
 import { useCategoryScope } from "@/components/shell/site-header";
 
 type Option = { id: string; label: string; hint?: string; group: string; href: string; term?: string; lang?: string };
@@ -97,7 +98,7 @@ function SearchPanel({ categories, close }: { categories: Category[]; close: () 
   const groups = [...new Set(options.map((x) => x.group))];
 
   function go(option: Pick<Option, "href" | "term">) {
-    if (option.term) setRecent(rememberSearch(option.term));
+    if (option.term) { setRecent(rememberSearch(option.term)); track({ name: "search", search_term: option.term }); }
     close();
     startTransition(() => router.push(option.href));
   }

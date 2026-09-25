@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { fontVariables } from "@/app/fonts";
+import { Analytics } from "@/components/analytics/analytics";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 import { StorefrontProvider } from "@/components/providers/storefront-provider";
 import { BottomNav } from "@/components/shell/bottom-nav";
@@ -11,6 +12,7 @@ import { SiteHeader } from "@/components/shell/site-header";
 import { isLocale, localeDirection, locales, parseRegion, REGION_COOKIE, regionFromHint, withLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionary";
 import { serverGet } from "@/lib/api";
+import { siteUrl } from "@/lib/seo";
 import { publicSession } from "@/lib/auth/session";
 import type { AuthSession, Category } from "@/lib/types";
 import "../globals.css";
@@ -19,8 +21,11 @@ export const dynamicParams = false;
 export const generateStaticParams = () => locales.map((lang) => ({ lang }));
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl()),
   title: { default: "Amaron", template: "%s | Amaron" },
   description: "Considered goods for everyday rituals.",
+  openGraph: { siteName: "Amaron", type: "website" },
+  twitter: { card: "summary" },
 };
 
 export default async function LocaleLayout({ children, params }: LayoutProps<"/[lang]">) {
@@ -43,6 +48,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps<"/[
             <div id="main-content" tabIndex={-1}>{children}</div>
             <BottomNav />
             <SearchMode categories={categories} />
+            <Analytics gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
             {session.authenticated ? null : <SignInGate />}
           </StorefrontProvider>
         </LocaleProvider>

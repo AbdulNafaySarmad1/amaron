@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import Script from "next/script";
+import { FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { Link, useIntlLocale, useLocaleContext, useLocalizedRouter } from "@/components/providers/locale-provider";
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
@@ -9,6 +10,28 @@ import { format, isolate } from "@/i18n/dictionary";
 import { ApiError, browserRequest, formatMoney } from "@/lib/api";
 import type { CheckoutResult, Payment, ShippingAddress } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
+import { itemFrom, track } from "@/lib/telemetry";
+import type { Cart } from "@/lib/types";
+
+const cartItems = (cart: Cart) => cart.items.map((i) => itemFrom({ id: i.productId, title: i.title, variant: i.variant, price: i.unitPrice, quantity: i.quantity }));
+
+type TurnstileApi = { render(el: HTMLElement, options: Record<string, unknown>): string; reset(id: string): void; remove(id: string): void };
+const turnstileApi = () => (window as Window & { turnstile?: TurnstileApi }).turnstile;
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+/** Cloudflare Turnstile, rendered only when a site key is configured. Invisible unless Cloudflare wants an interaction. */
+function Turnstile({ siteKey, widgetRef }: { siteKey: string; widgetRef: RefObject<string | null> }) {
+  const container = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const api = turnstileApi();
+    if (!ready || !api || !container.current) return;
+    const id = api.render(container.current, { sitekey: siteKey, appearance: "interaction-only", "response-field-name": "turnstileToken" });
+    widgetRef.current = id;
+    return () => { api.remove(id); widgetRef.current = null; };
+  }, [ready, siteKey, widgetRef]);
+  return <><Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" onReady={() => setReady(true)} /><div ref={container} className="checkout-challenge" /></>;
+}
 
 const METHODS = ["Card", "Raast", "BankTransfer", "CashOnDelivery", "Installment"] as const;
 
@@ -23,6 +46,13 @@ export function CheckoutForm() {
   const [error, setError] = useState<string | null>(null);
   const [pendingPayment, setPendingPayment] = useState<Payment | null>(null);
   const checkoutAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
+  const turnstileWidget = useRef<string | null>(null);
+  const cartId = cart?.cartId;
+  useEffect(() => {
+    if (cart?.items.length) track({ name: "begin_checkout", currency: cart.subtotal.currency, value: cart.subtotal.amount, items: cartItems(cart) });
+    // Once per checkout visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartId]);
   const countryName = (code: string) => new Intl.DisplayNames([intl], { type: "region" }).of(code) ?? code;
 
   async function keyFor(payload: string) {
@@ -52,18 +82,26 @@ export function CheckoutForm() {
     };
     const paymentMethod = String(values.get("paymentMethod") ?? "Card");
     const token = String(values.get("paymentToken") ?? "");
+    const challenge = String(values.get("turnstileToken") ?? "");
+    if (cart) {
+      const priced = { currency: cart.subtotal.currency, value: cart.subtotal.amount, items: cartItems(cart) };
+      track({ name: "add_shipping_info", ...priced, shipping_tier: shippingAddress.countryCode });
+      track({ name: "add_payment_info", ...priced, payment_type: paymentMethod });
+    }
     const payload = JSON.stringify({ cartId: cart?.cartId, cartVersion: cart?.version, shippingAddress, paymentMethod, token });
     try {
-      const result = await browserRequest<CheckoutResult>("/api/bff/checkout/confirm", { method: "POST", headers: { "Idempotency-Key": await keyFor(payload) }, body: JSON.stringify({ shippingAddress, paymentMethod: { method: paymentMethod, provider: "test", paymentMethodToken: token || undefined } }) }, 22_000);
+      const result = await browserRequest<CheckoutResult>("/api/bff/checkout/confirm", { method: "POST", headers: { "Idempotency-Key": await keyFor(payload), ...(challenge && { "X-Turnstile-Token": challenge }) }, body: JSON.stringify({ shippingAddress, paymentMethod: { method: paymentMethod, provider: "test", paymentMethodToken: token || undefined } }) }, 22_000);
       if (result.payment.status === "RequiresCustomerAction") { setPendingPayment(result.payment); return; }
       try { sessionStorage.removeItem("amaron:checkout-attempt"); } catch { /* Storage is an optimization, not a checkout dependency. */ }
       checkoutAttempt.current = null;
       await load();
       router.push(`/orders/${result.order.id}?placed=1`);
     } catch (caught) {
-      setError(caught instanceof ApiError && caught.status < 500 ? caught.message : t.errorUnknown);
+      setError(caught instanceof ApiError && caught.problem.code === "challenge_required" ? t.challengeFailed : caught instanceof ApiError && caught.status < 500 ? caught.message : t.errorUnknown);
     } finally {
       setSubmitting(false);
+      // Tokens are single-use; get a fresh one for any retry.
+      if (turnstileWidget.current) turnstileApi()?.reset(turnstileWidget.current);
     }
   }
 
@@ -129,6 +167,7 @@ export function CheckoutForm() {
           <section className="checkout-step" aria-labelledby="step-review">
             <h2 id="step-review" className="t-h3"><span aria-hidden="true">3</span>{t.review}</h2>
             {pendingPayment ? <div className="checkout-error" role="status"><strong>{t.verifyTitle}</strong><span>{t.verifyBody}</span><Button type="button" onClick={() => void completeAuthentication()} busy={submitting}>{t.verify}</Button></div> : null}
+            {TURNSTILE_SITE_KEY ? <Turnstile siteKey={TURNSTILE_SITE_KEY} widgetRef={turnstileWidget} /> : null}
             {error ? <div className="checkout-error" role="alert"><strong>{t.errorTitle}</strong><span>{error}</span></div> : null}
             <Button size="large" className="checkout-pay" busy={submitting} type="submit" disabled={!!pendingPayment}>{submitting ? t.placing : format(t.pay, { amount: isolate(total) })}</Button>
             <p className="t-meta checkout-assurance">{t.assurance}</p>

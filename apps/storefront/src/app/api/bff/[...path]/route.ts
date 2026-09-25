@@ -21,8 +21,10 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const headers = new Headers({ Accept: "application/json", Authorization: `Bearer ${accessToken}` });
   const contentType = request.headers.get("content-type");
   const idempotencyKey = request.headers.get("idempotency-key");
+  const turnstileToken = request.headers.get("x-turnstile-token");
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
+  if (turnstileToken) headers.set("X-Turnstile-Token", turnstileToken);
   let upstream: Response;
   try {
     upstream = await fetch(`${requiredEnv("API_URL")}/api${path}${request.nextUrl.search}`, {

@@ -25,7 +25,7 @@ export function RecentlyExplored() {
   return (
     <section className="home-rail" aria-labelledby="home-recent">
       <header className="home-rail__head"><h2 id="home-recent" className="t-h2">{t.home.recent}</h2></header>
-      <ProductGrid products={products} />
+      <ProductGrid list="recently-explored" products={products} />
     </section>
   );
 }

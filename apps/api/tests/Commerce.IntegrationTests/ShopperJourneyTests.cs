@@ -9,6 +9,8 @@ using Commerce.Application;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
@@ -969,6 +971,67 @@ public sealed class ShopperJourneyTests
         Assert.Equal("Noise-Cancelling Headphones", (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones"))!.Product.Title);
     }
 
+    private sealed class FakeVerification : IHumanVerification
+    {
+        public bool Enabled => true;
+        public Task<bool> VerifyAsync(string? token, CancellationToken cancellationToken) => Task.FromResult(token == "human");
+    }
+
+    [Fact]
+    public async Task Checkout_requires_a_verified_challenge_when_turnstile_is_enabled()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false, services: s => s.AddSingleton<IHumanVerification, FakeVerification>());
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Customer-Id", "turnstile-shopper");
+
+        var product = (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/webcam-light"))!.Product;
+        (await client.PutAsJsonAsync("/api/cart/items", new SetCartItemRequest(product.Variants[0].Id, 1))).EnsureSuccessStatusCode();
+        var checkout = new CheckoutRequest(new AddressRequest("Ada Shopper", "1 Market Street", null, "Karachi", "Sindh", "74000", "PK"));
+        HttpRequestMessage Request(string key, string? token)
+        {
+            var message = new HttpRequestMessage(HttpMethod.Post, "/api/checkout/confirm") { Content = JsonContent.Create(checkout) };
+            message.Headers.Add("Idempotency-Key", key);
+            if (token is not null) message.Headers.Add("X-Turnstile-Token", token);
+            return message;
+        }
+
+        using var missing = await client.SendAsync(Request("turnstile-1", null));
+        Assert.Equal(HttpStatusCode.Forbidden, missing.StatusCode);
+        Assert.Equal("challenge_required", (await missing.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        using var rejected = await client.SendAsync(Request("turnstile-2", "bot"));
+        Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        using var accepted = await client.SendAsync(Request("turnstile-3", "human"));
+        Assert.Equal(HttpStatusCode.Created, accepted.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null, "{\"success\":true}", HttpStatusCode.OK, false)]            // no token
+    [InlineData("tok", "{\"success\":true}", HttpStatusCode.OK, true)]
+    [InlineData("tok", "{\"success\":false,\"error-codes\":[\"invalid-input-response\"]}", HttpStatusCode.OK, false)]
+    [InlineData("tok", "", HttpStatusCode.ServiceUnavailable, true)]              // Cloudflare down: allow, logged
+    public async Task Turnstile_verification_trusts_only_cloudflare(string? token, string body, HttpStatusCode status, bool expected)
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(status) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") });
+        var configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["TURNSTILE_SECRET_KEY"] = "test-secret" }).Build();
+        var verifier = new Commerce.Infrastructure.CloudflareTurnstile(new HttpClient(handler), configuration, Microsoft.Extensions.Logging.Abstractions.NullLogger<Commerce.Infrastructure.CloudflareTurnstile>.Instance);
+        Assert.Equal(expected, await verifier.VerifyAsync(token, CancellationToken.None));
+        if (token is not null) Assert.Contains("secret=test-secret", handler.LastBody);
+        var disabled = new Commerce.Infrastructure.CloudflareTurnstile(new HttpClient(handler), new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), Microsoft.Extensions.Logging.Abstractions.NullLogger<Commerce.Infrastructure.CloudflareTurnstile>.Instance);
+        Assert.False(disabled.Enabled);
+    }
+
+    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        public string LastBody { get; private set; } = "";
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastBody = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
+            return respond(request);
+        }
+    }
+
     private static void AddProduct(Commerce.Infrastructure.CommerceDbContext db, Commerce.Domain.Category category, string title)
     {
         var now = DateTimeOffset.UtcNow;
@@ -978,9 +1041,10 @@ public sealed class ShopperJourneyTests
         db.Products.Add(product);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool cacheEnabled, bool applyMigrations = true) =>
+    private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool cacheEnabled, bool applyMigrations = true, Action<IServiceCollection>? services = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            if (services is not null) builder.ConfigureTestServices(services);
             builder.UseEnvironment("Development");
             builder.UseSetting("DATABASE_URL", connectionString);
             builder.UseSetting("APPLY_MIGRATIONS", applyMigrations.ToString());

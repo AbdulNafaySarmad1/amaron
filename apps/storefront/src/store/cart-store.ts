@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { browserRequest } from "@/lib/api";
-import type { Cart, CartMutation } from "@/lib/types";
+import { itemFrom, track } from "@/lib/telemetry";
+import type { Cart, CartItem, CartMutation } from "@/lib/types";
+
+const lineItem = (item: CartItem, quantity: number) => itemFrom({ id: item.productId, title: item.title, variant: item.variant, price: item.unitPrice, quantity });
+function trackQuantityChange(item: CartItem, delta: number) {
+  if (delta === 0) return;
+  track({ name: delta > 0 ? "add_to_cart" : "remove_from_cart", currency: item.unitPrice.currency, value: item.unitPrice.amount * Math.abs(delta), items: [lineItem(item, Math.abs(delta))] });
+}
 
 type CartState = {
   cart: Cart | null;
@@ -51,6 +58,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   open: async () => {
     set({ isOpen: true });
     if (get().status !== "ready") await get().load();
+    const cart = get().cart;
+    if (cart?.items.length) track({ name: "view_cart", currency: cart.subtotal.currency, value: cart.subtotal.amount, items: cart.items.map((item) => lineItem(item, item.quantity)) });
   },
   close: () => set({ isOpen: false }),
   add: (variantId) => serializeMutation(async () => {
@@ -65,6 +74,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       if (!cart || !mutation.changedItem) { await get().load(); return; }
       const existing = cart.items.some((item) => item.variantId === variantId);
       set({ cart: { cartId: mutation.cartId, totalQuantity: mutation.totalQuantity, subtotal: mutation.subtotal, version: mutation.version, items: existing ? cart.items.map((item) => item.variantId === variantId ? mutation.changedItem! : item) : [...cart.items, mutation.changedItem] }, status: "ready" });
+      trackQuantityChange(mutation.changedItem, mutation.changedItem.quantity - current);
     } finally { set({ isLoading: false }); }
   }),
   setQuantity: (variantId, quantity) => {
@@ -73,8 +83,10 @@ export const useCartStore = create<CartState>((set, get) => ({
     cartRevision++;
     set({ isLoading: true, error: null });
     try {
+      const before = get().cart?.items.find((item) => item.variantId === variantId)?.quantity ?? 0;
       const mutation = await browserRequest<CartMutation>("/api/bff/cart/items", { method: "PUT", body: JSON.stringify({ variantId, quantity }) });
       const cart = get().cart;
+      if (mutation.changedItem) trackQuantityChange(mutation.changedItem, mutation.changedItem.quantity - before);
       if (cart && mutation.changedItem) {
         set({ cart: { ...cart, totalQuantity: mutation.totalQuantity, subtotal: mutation.subtotal, version: mutation.version, items: cart.items.map((item) => item.variantId === variantId ? mutation.changedItem! : item) }, status: "ready" });
       }
@@ -89,7 +101,9 @@ export const useCartStore = create<CartState>((set, get) => ({
     cartRevision++;
     set({ isLoading: true, error: null });
     try {
+      const removed = get().cart?.items.find((item) => item.variantId === variantId);
       set({ cart: await browserRequest<Cart>(`/api/bff/cart/items/${encodeURIComponent(variantId)}`, { method: "DELETE" }), status: "ready" });
+      if (removed) trackQuantityChange(removed, -removed.quantity);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "That item could not be removed." });
     } finally {

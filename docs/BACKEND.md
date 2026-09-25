@@ -75,6 +75,12 @@ Availability shown to shoppers uses one definition, `SellableStock.Query`, which
 
 `product_translations` (title, short description, description, SEO title and description) and `category_translations` (name) are keyed by entity and language. Every catalog read accepts `locale`; each field falls back to the canonical English record, and responses report the language actually served (`Locale`, `CategoryLocale`) so the storefront can mark text correctly. Cache keys include the language. Specifications, brands and relationship reasons are not translated yet.
 
+## Bot protection and sitemaps
+
+When `TURNSTILE_SECRET_KEY` is set, `POST /api/checkout/confirm` requires an `X-Turnstile-Token` that Cloudflare's siteverify accepts; otherwise it returns 403 `challenge_required` before any cart, stock or payment work. Verification runs server-side only (`CloudflareTurnstile`, 5-second timeout). If Cloudflare itself is unreachable or returns 5xx, checkout fails open and logs a warning: an outage at the challenge provider must not stop genuine orders, and the order path keeps its own rate limits and idempotency. Unset, the check is off.
+
+`GET /api/catalog/sitemap/products?page=&pageSize=` pages active product slugs with their last update, 10,000 per page, for the storefront's sitemap index.
+
 ## PostgreSQL index plan
 
 | Table | Indexes |

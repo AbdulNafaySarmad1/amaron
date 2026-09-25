@@ -290,6 +290,9 @@ button { color: inherit; }
 .field input, .field select { background: var(--surface); border: var(--border-subtle); border-radius: var(--radius-sm); min-height: 3.25rem; padding: var(--space-3); width: 100%; }
 .field input:focus, .field select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 12%, transparent); outline: 0; }
 .checkout-error { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-inline-start: 3px solid var(--danger); color: var(--danger); display: grid; font-size: var(--text-sm); margin-top: var(--space-6); padding: var(--space-4); }
+.checkout-challenge:empty { display: none; }
+.checkout-challenge { margin-top: var(--space-4); }
+.ad-slot { align-items: center; border: 1px dashed currentColor; border-radius: var(--radius-lg); display: grid; justify-items: center; margin-block: var(--space-8); min-block-size: 250px; opacity: .6; }
 .order-summary { background: var(--surface); border: var(--border-subtle); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: var(--space-6); position: sticky; top: 7rem; }
 .order-summary h2 { font-family: var(--font-serif); font-size: var(--text-xl); margin: var(--space-1) 0 var(--space-6); }
 .order-summary ul { display: grid; gap: var(--space-4); list-style: none; margin: 0; padding: 0 0 var(--space-6); }

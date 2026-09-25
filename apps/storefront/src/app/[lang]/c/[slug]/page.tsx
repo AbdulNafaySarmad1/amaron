@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { TrackSearch } from "@/components/analytics/analytics";
 import { FilterDisclosure } from "@/components/catalog/filter-disclosure";
+import { JsonLd } from "@/components/seo/json-ld";
+import { AdSlot } from "@/components/ads/ad-slot";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Link } from "@/components/providers/locale-provider";
 import { CATALOG_LANG, intlLocale, type Locale, localizePath, withLocale } from "@/i18n/config";
@@ -8,6 +11,7 @@ import { format, plural } from "@/i18n/dictionary";
 import { currentDictionary, currentLocale } from "@/i18n/server";
 import { serverGet } from "@/lib/api";
 import { categoryPath, categoryTrail, childCategories } from "@/lib/categories";
+import { alternates, breadcrumbJsonLd, siteUrl } from "@/lib/seo";
 import type { Category, ProductPage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +28,18 @@ async function loadCategory(slug: string, locale: Locale) {
   return { categories, trail, category };
 }
 
-export async function generateMetadata({ params }: PageProps<"/[lang]/c/[slug]">): Promise<Metadata> {
-  const { category } = await loadCategory((await params).slug, await currentLocale());
-  return { title: category.name };
+/** Canonical is the category (plus page); searched or filtered views are noindex so filter permutations never get indexed. */
+export async function generateMetadata({ params, searchParams }: PageProps<"/[lang]/c/[slug]">): Promise<Metadata> {
+  const [{ slug }, search, locale] = await Promise.all([params, searchParams as Promise<Search>, currentLocale()]);
+  const { category } = await loadCategory(slug, locale);
+  const page = Math.max(1, Number(one(search, "page")) || 1);
+  const narrowed = Boolean(one(search, "q") || one(search, "sort") || FILTER_KEYS.some((key) => one(search, key)));
+  return {
+    title: category.name,
+    alternates: alternates(locale, `${categoryPath(category.slug)}${page > 1 ? `?page=${page}` : ""}`),
+    robots: narrowed ? { index: false, follow: true } : undefined,
+    openGraph: { title: category.name, locale },
+  };
 }
 
 /** A category as its own shopping space: results never leave its subtree, and search stays inside it unless asked. */
@@ -60,6 +73,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
 
   return (
     <main className="page category-page">
+      <JsonLd data={breadcrumbJsonLd([{ name: c.home, url: `${siteUrl()}/${locale}` }, ...trail.map((item) => ({ name: item.name, url: `${siteUrl()}/${locale}${categoryPath(item.slug)}` }))])} />
       <nav className="breadcrumbs" aria-label={c.breadcrumb}>
         <ol>
           <li><Link href="/">{c.home}</Link></li>
@@ -134,7 +148,8 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
             <button type="submit" className="text-button">{c.update}</button>
           </form>
 
-          {results.items.length ? <ProductGrid products={results.items} /> : q && !activeFilters ? (
+          {q ? <TrackSearch term={q} /> : null}
+          {results.items.length ? <ProductGrid list={`category:${category.slug}`} products={results.items} /> : q && !activeFilters ? (
             // Never silently escape the category: say so, and offer the wider search explicitly.
             <div className="empty-state" role="status">
               <h2 className="t-h3">{format(c.noResultsIn, { category: category.name, query: q })}</h2>
@@ -156,6 +171,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
               {results.page < results.totalPages ? <Link href={withParams({ page: String(results.page + 1) })} rel="next">{c.next}</Link> : <span />}
             </nav>
           ) : null}
+          <AdSlot placement="category-content" label={t.ads.label} />
         </section>
       </div>
     </main>

@@ -234,6 +234,7 @@
     "errorTitle": "We couldn't confirm the order.",
     "errorUnknown": "We couldn't confirm whether the order was placed. Trying again with the same details is safe.",
     "errorPayment": "Your payment wasn't completed. Try again or choose another method.",
+    "challengeFailed": "We couldn't confirm the security check. Wait a moment and place your order again.",
     "pay": "Pay {amount}",
     "placing": "Placing your order…",
     "assurance": "Stock and prices are checked once more before your order is placed.",
@@ -293,5 +294,8 @@
     "frequentlyBoughtWith": "Often bought together",
     "usefulAddition": "One useful addition",
     "add": "Add"
+  },
+  "ads": {
+    "label": "Advertisement"
   }
 }

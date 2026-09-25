@@ -1,5 +1,6 @@
 import { Untranslated } from "@/components/i18n/untranslated";
 import { Link } from "@/components/providers/locale-provider";
+import { TrackSearch } from "@/components/analytics/analytics";
 import { ProductGrid } from "@/components/product/product-grid";
 import { currentLocale } from "@/i18n/server";
 import { localizePath, withLocale } from "@/i18n/config";
@@ -8,6 +9,8 @@ import { serverGet } from "@/lib/api";
 import type { Category, ProductPage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+// Result pages for arbitrary queries are thin and unbounded: keep them out of the index but let crawlers follow links.
+export const metadata = { robots: { index: false, follow: true } };
 
 type SearchParameters = Record<string, string | string[] | undefined>;
 
@@ -71,7 +74,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             {Array.from(query.entries()).filter(([key]) => !["sort", "page", "pageSize"].includes(key)).map(([key, entry]) => <input key={key} type="hidden" name={key} value={entry} />)}
             <label htmlFor="sort">Sort by</label><select id="sort" name="sort" defaultValue={value(parameters, "sort") ?? ""}><option value="">Name</option><option value="newest">Newest</option><option value="rating">Top rated</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option></select><button type="submit">Update</button>
           </form>
-          {results.items.length ? <ProductGrid products={results.items} /> : <div className="empty-results"><span>?</span><h2>Nothing matched that combination</h2><p>Try removing a filter or searching with fewer words.</p><Link className="button button--secondary button--medium" href="/search">Browse all goods</Link></div>}
+          {searchTerm ? <TrackSearch term={searchTerm} /> : null}
+          {results.items.length ? <ProductGrid list="search" products={results.items} /> : <div className="empty-results"><span>?</span><h2>Nothing matched that combination</h2><p>Try removing a filter or searching with fewer words.</p><Link className="button button--secondary button--medium" href="/search">Browse all goods</Link></div>}
           {results.totalPages > 1 ? <nav className="pagination" aria-label="Results pages"><Link aria-disabled={currentPage === 1} href={currentPage > 1 ? pageLink(currentPage - 1) : pageLink(1)}>Previous</Link><span>Page {currentPage} of {results.totalPages}</span><Link aria-disabled={currentPage === results.totalPages} href={currentPage < results.totalPages ? pageLink(currentPage + 1) : pageLink(results.totalPages)}>Next</Link></nav> : null}
         </section>
       </div>

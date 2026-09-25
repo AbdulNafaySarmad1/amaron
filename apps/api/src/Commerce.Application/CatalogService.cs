@@ -139,6 +139,17 @@ public sealed partial class CatalogService(ICommerceDbContext db, IReadModelCach
             }, TimeSpan.FromMinutes(1), ["search-suggestions"], cancellationToken);
     }
 
+    /// <summary>Active product slugs for sitemaps, in stable order, a page at a time (keyset-friendly ordering by id).</summary>
+    public async Task<SitemapPageDto> GetSitemapPageAsync(int page, int pageSize, CancellationToken cancellationToken)
+    {
+        if (page < 1 || pageSize is < 1 or > 50_000) throw CommerceErrors.Validation("Page must be positive and pageSize between 1 and 50,000.");
+        var active = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active);
+        var total = await active.CountAsync(cancellationToken);
+        var items = await active.OrderBy(p => p.Id).Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(p => new SitemapEntryDto(p.Slug, p.UpdatedAt)).ToListAsync(cancellationToken);
+        return new SitemapPageDto(items, page, pageSize, total);
+    }
+
     public async Task<IReadOnlyList<ProductCardDto>> GetBatchAsync(IReadOnlyList<Guid> ids, string? locale, CancellationToken cancellationToken)
     {
         if (ids.Count is < 1 or > 50 || ids.Distinct().Count() != ids.Count) throw CommerceErrors.Validation("Provide between 1 and 50 unique product IDs.");

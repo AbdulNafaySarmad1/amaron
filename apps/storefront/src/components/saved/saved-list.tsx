@@ -52,7 +52,7 @@ export function SavedList() {
   return (
     <>
       {current.products.length < ids.length ? <p className="t-meta notice">{t.saved.unavailable}</p> : null}
-      <ProductGrid products={current.products} />
+      <ProductGrid list="saved" products={current.products} />
     </>
   );
 }

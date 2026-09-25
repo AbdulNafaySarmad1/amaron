@@ -11,6 +11,7 @@ import { CATALOG_LANG } from "@/i18n/config";
 import { format, isolate, plural } from "@/i18n/dictionary";
 import { formatMoney } from "@/lib/api";
 import { recordViewed } from "@/lib/recently-viewed";
+import { itemFrom, track } from "@/lib/telemetry";
 import { splitDescription } from "@/lib/specs";
 import type { StorefrontProduct } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
@@ -32,7 +33,13 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
   const unavailable = !selected || selected.availabilityHint === "out_of_stock";
   const isBook = product.kind === "book";
   const { lead, more } = splitDescription(product.description);
-  useEffect(() => { recordViewed(product.id); }, [product.id]);
+  useEffect(() => {
+    recordViewed(product.id);
+    const first = product.variants[0];
+    if (first) track({ name: "view_item", currency: first.price.currency, value: first.price.amount, items: [itemFrom({ id: product.id, title: product.title, brand: product.brand, price: first.price, variant: first.name })] });
+    // Once per product page, not per variant switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id]);
   const saving = selected?.listPrice && selected.listPrice.amount > selected.price.amount ? { amount: selected.listPrice.amount - selected.price.amount, currency: selected.price.currency } : null;
 
   async function addSelected() {
@@ -96,7 +103,7 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
             <Button size="large" className="pdp__add" busy={state === "loading"} disabled={unavailable} onClick={addSelected}>
               {state === "success" ? t.addToCart.success : state === "error" ? t.addToCart.error : unavailable ? t.addToCart.unavailable : t.addToCart.idle}
             </Button>
-            <Button variant="secondary" size="large" className="pdp__save" aria-pressed={saved} onClick={() => toggleSaved(product.id)} icon={<HeartIcon fill={saved ? "currentColor" : "none"} />}>
+            <Button variant="secondary" size="large" className="pdp__save" aria-pressed={saved} onClick={() => { if (!saved) track({ name: "add_to_wishlist", items: [itemFrom({ id: product.id, title: product.title, brand: product.brand, price: selected?.price })] }); toggleSaved(product.id); }} icon={<HeartIcon fill={saved ? "currentColor" : "none"} />}>
               {saved ? t.pdp.saved : t.pdp.save}
             </Button>
           </div>
@@ -136,14 +143,14 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
       {data.relationships.map((group) => (
         <section className="pdp__more" key={group.type} aria-labelledby={`pdp-related-${group.type}`}>
           <h2 id={`pdp-related-${group.type}`} className="t-h2">{t.related[group.type]}</h2>
-          <ProductGrid products={group.items.map((item) => item.product)} notes={Object.fromEntries(group.items.map((item) => [item.product.id, item.reason]))} />
+          <ProductGrid list={`related:${group.type}`} products={group.items.map((item) => item.product)} notes={Object.fromEntries(group.items.map((item) => [item.product.id, item.reason]))} />
         </section>
       ))}
 
       {recommendations.length ? (
         <section className="pdp__more" aria-labelledby="pdp-more">
           <h2 id="pdp-more" className="t-h2">{format(t.pdp.moreIn, { category: product.category })}</h2>
-          <ProductGrid products={recommendations.slice(0, 4)} />
+          <ProductGrid list="more-in-category" products={recommendations.slice(0, 4)} />
         </section>
       ) : null}
     </main>

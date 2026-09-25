@@ -7,7 +7,15 @@ import { CATALOG_LANG } from "@/i18n/config";
 import { format } from "@/i18n/dictionary";
 import { browserRequest, formatMoney } from "@/lib/api";
 import type { Order } from "@/lib/types";
+import { itemFrom, track } from "@/lib/telemetry";
 import { useOrderStatus } from "./order-list";
+
+/** Purchase is sent once per order, even if the confirmation page is reloaded. */
+function trackPurchaseOnce(order: Order) {
+  const key = `amaron:purchase-tracked:${order.id}`;
+  try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* storage unavailable: send once for this page view */ }
+  track({ name: "purchase", transaction_id: order.orderNumber, currency: order.subtotal.currency, value: order.subtotal.amount, items: order.items.map((i) => itemFrom({ id: i.variantId, title: i.productTitle, variant: i.variantName, price: i.unitPrice, quantity: i.quantity })) });
+}
 
 /** Reassurance first: the order is confirmed and what happens next. The receipt follows. No selling here. */
 export function OrderDetail({ id, placed, paymentConfirmed }: { id: string; placed: boolean; paymentConfirmed: boolean }) {
@@ -16,7 +24,11 @@ export function OrderDetail({ id, placed, paymentConfirmed }: { id: string; plac
   const statusLabel = useOrderStatus();
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState(false);
-  useEffect(() => { browserRequest<Order>(`/api/bff/orders/${encodeURIComponent(id)}`).then(setOrder).catch(() => setError(true)); }, [id]);
+  useEffect(() => {
+    browserRequest<Order>(`/api/bff/orders/${encodeURIComponent(id)}`)
+      .then((loaded) => { setOrder(loaded); if (placed || paymentConfirmed) trackPurchaseOnce(loaded); })
+      .catch(() => setError(true));
+  }, [id, placed, paymentConfirmed]);
 
   if (error) return <main className="page order-page"><div className="empty-state" role="alert"><h1 className="t-h2">{t.orders.notFound}</h1><Link className="button button--secondary button--medium" href="/orders">{t.orders.back}</Link></div></main>;
   if (!order) return <main className="page order-page"><p className="t-meta" role="status">{t.orders.loadingOne}</p></main>;

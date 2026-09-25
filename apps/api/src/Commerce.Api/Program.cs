@@ -90,6 +90,7 @@ builder.Services.AddOpenApi(options =>
 });
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient("identity-health", client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddHttpClient<IHumanVerification, CloudflareTurnstile>(client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddCommerceInfrastructure(builder.Configuration);
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<CartService>();
@@ -305,6 +306,7 @@ api.MapGet("/catalog/products/addition", async (string productIds, string? local
     var addition = await service.GetUsefulAdditionAsync(ids, locale, ct);
     return addition is null ? Results.NoContent() : Results.Ok(addition);
 }).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
+api.MapGet("/catalog/sitemap/products", (int? page, int? pageSize, CatalogService service, CancellationToken ct) => service.GetSitemapPageAsync(page ?? 1, pageSize ?? 10_000, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 api.MapGet("/search/suggestions", (string q, string? category, string? locale, CatalogService service, CancellationToken ct) => service.SuggestAsync(q, category, locale, ct)).RequireRateLimiting("autocomplete").WithRequestTimeout("autocomplete").AllowAnonymous();
 api.MapGet("/storefront/home", (string? locale, StorefrontService service, CancellationToken ct) => service.GetHomeAsync(locale, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 api.MapGet("/storefront/products/{slug}", async (HttpContext http, string slug, string? locale, StorefrontService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, locale, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
@@ -338,7 +340,14 @@ customer.MapPost("/checkout/confirm", async (HttpContext http, CheckoutRequest r
     {
         CommerceTelemetry.CheckoutDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
-}).RequireRateLimiting("checkout").WithRequestTimeout("checkout");
+}).RequireRateLimiting("checkout").WithRequestTimeout("checkout").AddEndpointFilter(async (context, next) =>
+{
+    // Abuse check before any order work. Contextual: only checkout, and only when Turnstile is configured.
+    var verification = context.HttpContext.RequestServices.GetRequiredService<IHumanVerification>();
+    if (verification.Enabled && !await verification.VerifyAsync(context.HttpContext.Request.Headers["X-Turnstile-Token"].ToString(), context.HttpContext.RequestAborted))
+        throw new CommerceException("challenge_required", "Complete the security check and try again.", StatusCodes.Status403Forbidden);
+    return await next(context);
+});
 customer.MapGet("/payments/{id:guid}", async (HttpContext http, Guid id, ApplicationUserResolver user, PaymentOrchestrator service, CancellationToken ct) => { NoStore(http); var payment = await service.GetPaymentAsync(id, ct); if (payment.CustomerId != await user.GetRequiredUserIdAsync(ct)) return Results.NotFound(); return Results.Ok(payment); }).RequireRateLimiting("cart").WithRequestTimeout("private-read");
 customer.MapPost("/payments/{id:guid}/confirm", async (HttpContext http, Guid id, ConfirmPaymentRequest request, CancellationToken ct) => { var service = http.RequestServices.GetRequiredService<PaymentOrchestrator>(); var user = http.RequestServices.GetRequiredService<ApplicationUserResolver>(); var payment = await service.GetPaymentAsync(id, ct); if (payment.CustomerId != await user.GetRequiredUserIdAsync(ct)) return Results.NotFound(); return Results.Ok(await service.ConfirmAsync(id, http.Request.Headers["Idempotency-Key"].ToString(), request.PaymentMethodToken, ct)); }).RequireRateLimiting("checkout").WithRequestTimeout("checkout");
 customer.MapGet("/orders", async (HttpContext http, int? pageSize, ApplicationUserResolver user, IAuthorizationService authorization, CheckoutService service, CancellationToken ct) => { NoStore(http); var canReadAny = (await authorization.AuthorizeAsync(http.User, CommercePolicies.OrdersReadAny)).Succeeded; return await service.GetOrdersAsync(await user.GetRequiredUserIdAsync(ct), pageSize ?? 20, canReadAny, ct); }).RequireAuthorization(CommercePolicies.OrdersReadOwn).RequireRateLimiting("cart").WithRequestTimeout("private-read");
