@@ -39,7 +39,8 @@ export type RelatedProduct = { product: ProductCardModel; reason: string };
 export type RelationshipGroup = { type: "accessory" | "compatible" | "complementary" | "alternative" | "upgrade" | "frequentlyBoughtWith"; items: RelatedProduct[] };
 export type StorefrontProduct = { product: ProductDetail; recommendations: ProductCardModel[]; isDegraded: boolean; relationships: RelationshipGroup[] };
 export type FacetValue = { value: string; count: number };
-export type ProductPage = { items: ProductCardModel[]; page: number; pageSize: number; totalCount: number; totalPages: number; brands: FacetValue[] };
+export type AttributeFacet = { label: string; values: FacetValue[] };
+export type ProductPage = { items: ProductCardModel[]; page: number; pageSize: number; totalCount: number; totalPages: number; brands: FacetValue[]; attributes?: AttributeFacet[] | null };
 export type Suggestion = { type: "product" | "category"; value: string; slug: string | null; locale: string };
 
 export type CartItem = { variantId: string; productId: string; slug: string; title: string; variant: string; image: ImageAsset | null; quantity: number; unitPrice: Money; lineTotal: Money; availabilityHint: string };

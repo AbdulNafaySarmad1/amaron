@@ -72,24 +72,38 @@ public static class CommerceSeeder
         if (!await db.PricingPolicies.AnyAsync(cancellationToken))
             db.PricingPolicies.Add(new PricingPolicy { Id = Id(9001), Currency = "USD", MinimumGrossMarginPercent = 10, MaximumChangePercent = 25, MaximumMarkdownPercent = 40, ApprovalThresholdPercent = 10, EnforceCostFloor = true, IsActive = true, UpdatedBy = "seed", UpdatedAt = seedTime });
 
-        var variants = await db.ProductVariants.Include(x => x.Inventory).ToListAsync(cancellationToken);
-        var warehouseStocks = await db.WarehouseStocks.Where(x => x.WarehouseId == warehouseId).ToDictionaryAsync(x => x.VariantId, cancellationToken);
-        var balanced = await db.InventoryBalances.Where(x => x.WarehouseId == warehouseId && x.State == InventoryState.Available).Select(x => x.VariantId).Distinct().ToListAsync(cancellationToken);
-        var priced = await db.PriceRecords.Select(x => x.VariantId).ToListAsync(cancellationToken);
-        foreach (var variant in variants)
-        {
-            if (!warehouseStocks.TryGetValue(variant.Id, out var stock))
-            {
-                stock = new WarehouseStock { WarehouseId = warehouseId, VariantId = variant.Id, OnHand = variant.Inventory.QuantityOnHand, SafetyStock = 2, SupplierLeadTimeDays = 7, UpdatedAt = seedTime };
-                db.WarehouseStocks.Add(stock);
-                db.InventoryLedgerEntries.Add(new InventoryLedgerEntry { Id = Guid.CreateVersion7(), VariantId = variant.Id, WarehouseId = warehouseId, QuantityDelta = variant.Inventory.QuantityOnHand, Reason = InventoryMovementReason.GoodsReceived, ReferenceType = "OpeningBalance", ReferenceId = "seed", CreatedBy = "seed", CreatedAt = seedTime });
-            }
-            if (!balanced.Contains(variant.Id))
-                db.InventoryBalances.Add(new InventoryBalance { Id = Guid.CreateVersion7(), WarehouseId = warehouseId, VariantId = variant.Id, State = InventoryState.Available, Quantity = stock.OnHand, UpdatedAt = seedTime });
-            if (!priced.Contains(variant.Id))
-                db.PriceRecords.Add(new PriceRecord { Id = Guid.CreateVersion7(), VariantId = variant.Id, Currency = variant.Currency, Price = variant.Price, CompareAtPrice = variant.ListPrice, CostAtTime = variant.UnitCost, EffectiveFrom = seedTime, Reason = "Opening price history", CreatedBy = "seed", CreatedAt = seedTime, ApprovedBy = "seed", ApprovedAt = seedTime, Source = "Seed", Revision = 1, Kind = PriceKind.Regular, Status = OperationalStatus.Applied });
-        }
         await db.SaveChangesAsync(cancellationToken);
+        await EnsureOperationalRowsAsync(db, cancellationToken);
+    }
+
+    /// <summary>
+    /// Every variant gets opening warehouse stock (with its ledger entry), an available balance and a price record.
+    /// Set-based, so it costs one indexed anti-join per table on each startup however large the catalog is.
+    /// </summary>
+    public static async Task EnsureOperationalRowsAsync(CommerceDbContext db, CancellationToken cancellationToken)
+    {
+        var warehouseId = Id(9000);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO inventory_ledger ("Id", "VariantId", "WarehouseId", "QuantityDelta", "Reason", "ReferenceType", "ReferenceId", "CreatedBy", "CreatedAt", "State")
+            SELECT gen_random_uuid(), i."VariantId", {warehouseId}, i."QuantityOnHand", 'GoodsReceived', 'OpeningBalance', 'seed', 'seed', now(), 'Available'
+            FROM inventory i WHERE NOT EXISTS (SELECT 1 FROM warehouse_stock s WHERE s."WarehouseId" = {warehouseId} AND s."VariantId" = i."VariantId")
+            """, cancellationToken);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO warehouse_stock ("WarehouseId", "VariantId", "OnHand", "Reserved", "SafetyStock", "Unavailable", "Inbound", "SupplierLeadTimeDays", "UpdatedAt")
+            SELECT {warehouseId}, i."VariantId", i."QuantityOnHand", 0, 2, 0, 0, 7, now()
+            FROM inventory i WHERE NOT EXISTS (SELECT 1 FROM warehouse_stock s WHERE s."WarehouseId" = {warehouseId} AND s."VariantId" = i."VariantId")
+            """, cancellationToken);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO inventory_balances ("Id", "WarehouseId", "VariantId", "State", "Quantity", "UpdatedAt")
+            SELECT gen_random_uuid(), s."WarehouseId", s."VariantId", 'Available', s."OnHand", now()
+            FROM warehouse_stock s WHERE s."WarehouseId" = {warehouseId}
+              AND NOT EXISTS (SELECT 1 FROM inventory_balances b WHERE b."WarehouseId" = s."WarehouseId" AND b."VariantId" = s."VariantId" AND b."State" = 'Available')
+            """, cancellationToken);
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO price_records ("Id", "VariantId", "Currency", "Price", "CompareAtPrice", "CostAtTime", "EffectiveFrom", "Reason", "CreatedBy", "CreatedAt", "ApprovedBy", "ApprovedAt", "Source", "Revision", "Kind", "Status")
+            SELECT gen_random_uuid(), v."Id", v."Currency", v."Price", v."ListPrice", v."UnitCost", now(), 'Opening price history', 'seed', now(), 'seed', now(), 'Seed', 1, 'Regular', 'Applied'
+            FROM product_variants v WHERE NOT EXISTS (SELECT 1 FROM price_records p WHERE p."VariantId" = v."Id")
+            """, cancellationToken);
     }
 
     private static (string Title, Category Category)[] SeedCatalog(Category electronics, Category home, Category books) =>

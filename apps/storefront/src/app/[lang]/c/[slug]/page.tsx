@@ -19,6 +19,8 @@ export const dynamic = "force-dynamic";
 type Search = Record<string, string | string[] | undefined>;
 const FILTER_KEYS = ["brand", "minPrice", "maxPrice", "minimumRating", "available"] as const;
 const one = (search: Search, key: string) => { const value = search[key]; return (Array.isArray(value) ? value[0] : value)?.trim() || undefined; };
+/** Detail filters ("RAM:16 GB") repeat: values of one label are alternatives, different labels all apply. */
+const details = (search: Search) => [search.attr ?? []].flat().map((value) => value.trim()).filter((value) => value.includes(":")).slice(0, 12);
 
 async function loadCategory(slug: string, locale: Locale) {
   const categories = await serverGet<Category[]>(withLocale("/api/catalog/categories", locale), 300);
@@ -33,7 +35,7 @@ export async function generateMetadata({ params, searchParams }: PageProps<"/[la
   const [{ slug }, search, locale] = await Promise.all([params, searchParams as Promise<Search>, currentLocale()]);
   const { category } = await loadCategory(slug, locale);
   const page = Math.max(1, Number(one(search, "page")) || 1);
-  const narrowed = Boolean(one(search, "q") || one(search, "sort") || FILTER_KEYS.some((key) => one(search, key)));
+  const narrowed = Boolean(one(search, "q") || one(search, "sort") || FILTER_KEYS.some((key) => one(search, key)) || details(search).length);
   return {
     title: category.name,
     alternates: alternates(locale, `${categoryPath(category.slug)}${page > 1 ? `?page=${page}` : ""}`),
@@ -55,19 +57,22 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
   if (q) query.set("q", q);
   if (sort) query.set("sort", sort);
   for (const key of FILTER_KEYS) { const value = one(search, key); if (value) query.set(key, value); }
+  const chosen = details(search);
+  for (const detail of chosen) query.append("attr", detail);
   const results = await serverGet<ProductPage>(withLocale(`/api/catalog/products?${query}`, locale), 20);
 
-  const activeFilters = FILTER_KEYS.filter((key) => one(search, key)).length;
+  const activeFilters = FILTER_KEYS.filter((key) => one(search, key)).length + chosen.length;
   const here = localizePath(locale, categoryPath(category.slug));
   const withParams = (changes: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
-    for (const [key, value] of query) if (!["category", "pageSize"].includes(key)) next.set(key, value);
+    for (const [key, value] of query) if (!["category", "pageSize"].includes(key)) next.append(key, value);
     for (const [key, value] of Object.entries(changes)) { if (value) next.set(key, value); else next.delete(key); }
     if (next.get("page") === "1") next.delete("page");
     const text = next.toString();
     return `${categoryPath(category.slug)}${text ? `?${text}` : ""}`;
   };
   const hidden = (keys: readonly string[]) => keys.map((key) => { const value = key === "q" ? q : key === "sort" ? sort : one(search, key); return value ? <input key={key} type="hidden" name={key} value={value} /> : null; });
+  const hiddenDetails = chosen.map((detail) => <input key={detail} type="hidden" name="attr" value={detail} />);
   const children = childCategories(categories, category.id);
   const name = <span lang={category.locale} dir="auto">{category.name}</span>;
 
@@ -112,6 +117,15 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
                   ))}
                 </fieldset>
               ) : null}
+              {(results.attributes ?? []).map((facet) => (
+                <fieldset key={facet.label}>
+                  <legend className="t-ui" lang={CATALOG_LANG} dir="auto">{facet.label}</legend>
+                  {facet.values.map((option) => {
+                    const value = `${facet.label}:${option.value}`;
+                    return <label className="check-row" key={value}><input type="checkbox" name="attr" value={value} defaultChecked={chosen.includes(value)} /> <span lang={CATALOG_LANG} dir="auto">{option.value}</span> <small>{option.count}</small></label>;
+                  })}
+                </fieldset>
+              ))}
               <fieldset>
                 <legend className="t-ui">{c.price}</legend>
                 <div className="price-inputs">
@@ -129,7 +143,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
               </fieldset>
               <label className="check-row"><input type="checkbox" name="available" value="true" defaultChecked={one(search, "available") === "true"} /> {c.inStock}</label>
               <button className="button button--primary button--medium" type="submit">{c.apply}</button>
-              {activeFilters ? <Link className="text-button" href={withParams(Object.fromEntries(FILTER_KEYS.map((key) => [key, undefined])))}>{c.clearFilters}</Link> : null}
+              {activeFilters ? <Link className="text-button" href={withParams(Object.fromEntries([...FILTER_KEYS, "attr"].map((key) => [key, undefined])))}>{c.clearFilters}</Link> : null}
             </form>
           </FilterDisclosure>
         </aside>
@@ -137,9 +151,10 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
         <section className="results" aria-label={category.name}>
           <form className="sort-form" action={here}>
             {hidden(["q", ...FILTER_KEYS])}
+            {hiddenDetails}
             <label htmlFor="sort">{c.sort}</label>
             <select id="sort" name="sort" defaultValue={sort ?? ""}>
-              <option value="">{c.sortName}</option>
+              <option value="">{q ? t.search.relevance : c.sortName}</option>
               <option value="newest">{c.sortNewest}</option>
               <option value="rating">{c.sortRating}</option>
               <option value="price-asc">{c.sortPriceAsc}</option>
@@ -160,7 +175,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps<"
             <div className="empty-state" role="status">
               <h2 className="t-h3">{c.noMatchTitle}</h2>
               <p>{c.noMatchBody}</p>
-              <Link className="button button--secondary button--medium" href={withParams(Object.fromEntries(FILTER_KEYS.map((key) => [key, undefined])))}>{c.clearFilters}</Link>
+              <Link className="button button--secondary button--medium" href={withParams(Object.fromEntries([...FILTER_KEYS, "attr"].map((key) => [key, undefined])))}>{c.clearFilters}</Link>
             </div>
           )}
 

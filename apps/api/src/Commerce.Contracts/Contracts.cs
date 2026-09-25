@@ -10,8 +10,9 @@ public sealed record ProductDetailDto(Guid Id, string Slug, string Title, string
 /// <summary>Locale is the language Name is actually in: the requested one, or the canonical fallback.</summary>
 public sealed record CategoryDto(Guid Id, string Slug, string Name, Guid? ParentId, string Locale = "en");
 public sealed record FacetValueDto(string Value, int Count);
-public sealed record ProductPageDto(IReadOnlyList<ProductCardDto> Items, int Page, int PageSize, int TotalCount, int TotalPages, IReadOnlyList<FacetValueDto> Brands);
-public sealed record SearchRequest(string? Query, string? Category, string? Brand, decimal? MinPrice, decimal? MaxPrice, decimal? MinimumRating, bool? Available, string? Sort, int Page = 1, int PageSize = 24, string? Locale = null);
+public sealed record AttributeFacetDto(string Label, IReadOnlyList<FacetValueDto> Values);
+public sealed record ProductPageDto(IReadOnlyList<ProductCardDto> Items, int Page, int PageSize, int TotalCount, int TotalPages, IReadOnlyList<FacetValueDto> Brands, IReadOnlyList<AttributeFacetDto>? Attributes = null);
+public sealed record SearchRequest(string? Query, string? Category, string? Brand, decimal? MinPrice, decimal? MaxPrice, decimal? MinimumRating, bool? Available, string? Sort, int Page = 1, int PageSize = 24, string? Locale = null, IReadOnlyList<string>? Attributes = null);
 public sealed record SitemapEntryDto(string Slug, DateTimeOffset UpdatedAt);
 public sealed record SitemapPageDto(IReadOnlyList<SitemapEntryDto> Items, int Page, int PageSize, int TotalCount);
 public sealed record SuggestionDto(string Type, string Value, string? Slug, string Locale = "en");

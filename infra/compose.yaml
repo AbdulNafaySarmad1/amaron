@@ -1,6 +1,9 @@
 services:
   postgres:
     image: postgres:18-alpine
+    # SSD/in-memory costs: the default random_page_cost (4, spinning disks) makes the planner hash all 125k variants
+    # instead of probing the few thousand a category page needs. Managed databases on SSD should use the same.
+    command: ["postgres", "-c", "random_page_cost=1.1"]
     environment:
       POSTGRES_DB: commerce
       POSTGRES_USER: commerce
@@ -93,6 +96,7 @@ services:
       CACHE_ENABLED: "true"
       APPLY_MIGRATIONS: "true"
       ALLOW_DEVELOPMENT_IDENTITY: "true"
+      SYNTHETIC_CATALOG_PRODUCTS: ${SYNTHETIC_CATALOG_PRODUCTS:-0}
       FRONTEND_ORIGIN: http://localhost:3000
       AUTH_AUTHORITY: http://localhost:8081/realms/commerce
       AUTH_METADATA_ADDRESS: http://keycloak:8080/realms/commerce/.well-known/openid-configuration

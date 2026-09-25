@@ -13,7 +13,7 @@ import { currentDictionary, currentLocale } from "@/i18n/server";
 import { serverGet } from "@/lib/api";
 import { categoryPath, childCategories } from "@/lib/categories";
 import { alternates, organizationJsonLd } from "@/lib/seo";
-import type { HomeModel, ProductCardModel, ProductPage } from "@/lib/types";
+import type { Category, HomeModel, ProductCardModel, ProductPage } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +26,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const [locale, t] = await Promise.all([currentLocale(), currentDictionary()]);
   return { description: t.home.heroLede, alternates: alternates(locale, "/"), openGraph: { title: "Amaron", description: t.home.heroLede, locale } };
 }
+
+// A handful of spaces up front; the rest one tap away, so the page reaches products quickly on a phone.
+const FIRST_SPACES = 8;
 
 /** Few products per section, no repeats across sections, and nothing without real data behind it. */
 export default async function StorefrontPage() {
@@ -49,6 +52,15 @@ export default async function StorefrontPage() {
     { id: "rated", title: t.home.rated, products: take(rated?.items), href: "/search?sort=rating" },
   ].filter((rail) => rail.products.length);
   const spaces = home.navigation.filter((c) => !c.parentId);
+  const space = (item: Category) => (
+    <li key={item.id}>
+      <Link href={categoryPath(item.slug)} aria-label={format(t.home.explore, { category: item.name })}>
+        <span className="t-h3" lang={item.locale} dir="auto">{item.name}</span>
+        <span className="home-spaces__children t-meta" dir="auto">{childCategories(home.navigation, item.id).slice(0, 3).map((c) => c.name).join(" · ")}</span>
+        <ArrowIcon className="flip-rtl" />
+      </Link>
+    </li>
+  );
 
   return (
     <main className="home">
@@ -62,17 +74,13 @@ export default async function StorefrontPage() {
       {spaces.length ? (
         <section className="home-spaces" aria-labelledby="home-spaces">
           <h2 id="home-spaces" className="t-h2">{t.home.spaces}</h2>
-          <ul>
-            {spaces.map((space) => (
-              <li key={space.id}>
-                <Link href={categoryPath(space.slug)} aria-label={format(t.home.explore, { category: space.name })}>
-                  <span className="t-h3" lang={space.locale} dir="auto">{space.name}</span>
-                  <span className="home-spaces__children t-meta" dir="auto">{childCategories(home.navigation, space.id).slice(0, 3).map((c) => c.name).join(" · ")}</span>
-                  <ArrowIcon className="flip-rtl" />
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <ul>{spaces.slice(0, FIRST_SPACES).map(space)}</ul>
+          {spaces.length > FIRST_SPACES ? (
+            <details className="home-spaces__more">
+              <summary className="text-button">{t.home.allSpaces}</summary>
+              <ul>{spaces.slice(FIRST_SPACES).map(space)}</ul>
+            </details>
+          ) : null}
         </section>
       ) : null}
 

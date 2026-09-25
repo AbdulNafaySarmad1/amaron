@@ -26,9 +26,13 @@ Catalog requests carry the page language (`withLocale()`), and product and categ
 
 Counted strings ("3 items", Russian "2 товара", Arabic dual forms) are plural-form objects in the dictionaries and are rendered with `plural()`, which uses `Intl.PluralRules`; never build them with `format()`.
 
+## Search and detail filters
+
+`/search` is the store-wide list: query results, or all products for the homepage's "See all" links. It is fully translated, links to each space, and orders query results by relevance. Category pages add detail filters from the API (`attributes`) as checkboxes submitting repeatable `attr=Label:Value`, a plain GET form that works without JavaScript; chosen details survive sorting and paging, count as active filters, and make the page `noindex`. Labels and values are catalog data and are marked `lang="en"`.
+
 ## Homepage
 
-A minimal hero (display heading and one large search field that opens search mode), top-level categories as large tiles, then at most three rails of four products from real data (featured, newest, top rated) with no product repeated across rails, and a device-local "Recently explored" rail when history exists. Optional rails fail quietly so a slow query never breaks the page. There is no 3D or scroll-driven animation; `three`, React Three Fiber and `gsap` were removed.
+A minimal hero (display heading and one large search field that opens search mode), the first eight spaces as large tiles with the rest behind a native "All spaces" disclosure (25 departments would otherwise push products far down on a phone), then at most three rails of four products from real data (featured, newest, top rated) with no product repeated across rails, and a device-local "Recently explored" rail when history exists. Optional rails fail quietly so a slow query never breaks the page. There is no 3D or scroll-driven animation; `three`, React Three Fiber and `gsap` were removed.
 
 ## Product page, checkout and confirmation
 

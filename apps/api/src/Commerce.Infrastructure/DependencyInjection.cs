@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace Commerce.Infrastructure;
@@ -14,6 +15,10 @@ public static class DependencyInjection
         var database = configuration["DATABASE_URL"] ?? configuration.GetConnectionString("Commerce") ?? "Host=localhost;Port=5432;Database=commerce;Username=commerce;Password=commerce_dev";
         // Transactional checkout is intentionally not wrapped in an implicit retry
         // strategy; ambiguous commits are resolved by the persisted idempotency key.
+        // Typo search reads its trigram cut-off from this session setting (PostgresProductSearch), so every connection sets it.
+        var connection = new NpgsqlConnectionStringBuilder(database);
+        connection.Options = $"{connection.Options} -c pg_trgm.word_similarity_threshold={PostgresProductSearch.TypoThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture)}".Trim();
+        database = connection.ConnectionString;
         services.AddDbContext<CommerceDbContext>(options => options.UseNpgsql(database, npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
         services.AddScoped<ICommerceDbContext>(sp => sp.GetRequiredService<CommerceDbContext>());
         services.AddScoped<IProductSearch, PostgresProductSearch>();

@@ -13,13 +13,13 @@ public static class SellableStock
     /// the sum of each warehouse's available-to-sell (<see cref="OperationsCalculations.AvailableToSell"/>: on hand less
     /// reserved, safety stock and unavailable, never negative), capped by the aggregate on hand; otherwise the aggregate.
     /// Catalog availability, the "in stock" filter and the bag all use this, so nothing offered can be refused at checkout.
+    /// Read from inventory (keyed by variant), not variants joined to themselves, so callers get one probe per variant.
     /// </summary>
-    public static IQueryable<VariantSellable> Query(ICommerceDbContext db) => db.ProductVariants.Select(v => new VariantSellable
+    public static IQueryable<VariantSellable> Query(ICommerceDbContext db) => db.Inventory.Select(i => new VariantSellable
     {
-        VariantId = v.Id,
-        Units = db.WarehouseStocks.Any(s => s.VariantId == v.Id)
-            ? Math.Min(v.Inventory.QuantityOnHand, db.WarehouseStocks.Where(s => s.VariantId == v.Id)
-                .Sum(s => s.OnHand - s.Reserved - s.SafetyStock - s.Unavailable > 0 ? s.OnHand - s.Reserved - s.SafetyStock - s.Unavailable : 0))
-            : v.Inventory.QuantityOnHand,
+        VariantId = i.VariantId,
+        Units = db.WarehouseStocks.Any(s => s.VariantId == i.VariantId)
+            ? Math.Min(i.QuantityOnHand, db.WarehouseStocks.Where(s => s.VariantId == i.VariantId).Sum(s => Math.Max(s.OnHand - s.Reserved - s.SafetyStock - s.Unavailable, 0)))
+            : i.QuantityOnHand,
     });
 }

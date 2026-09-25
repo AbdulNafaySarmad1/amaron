@@ -28,6 +28,8 @@
   },
   "search": {
     "label": "Search the store",
+    "everything": "All products",
+    "relevance": "Relevance",
     "placeholder": "Search products, brands and categories",
     "trigger": "Search",
     "close": "Close search",
@@ -278,6 +280,7 @@
     "heroTitle": "Find something worth keeping.",
     "heroLede": "Considered goods from every corner of the store. Search for anything, or wander a space.",
     "spaces": "Browse by space",
+    "allSpaces": "All spaces",
     "explore": "Explore {category}",
     "featured": "Editor's picks",
     "newest": "New arrivals",

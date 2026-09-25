@@ -971,6 +971,60 @@ public sealed class ShopperJourneyTests
         Assert.Equal("Noise-Cancelling Headphones", (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones"))!.Product.Title);
     }
 
+    [Fact]
+    public async Task Synthetic_catalog_loads_once_into_translated_category_trees_with_stock_and_prices()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false, syntheticProducts: 2500);
+        using var client = factory.CreateClient();
+
+        var categories = (await client.GetFromJsonAsync<List<CategoryDto>>("/api/catalog/categories?locale=ur"))!;
+        Assert.Equal(25, categories.Count(c => c.ParentId is null));
+        var laptops = categories.Single(c => c.Slug == "laptops");
+        Assert.Equal(categories.Single(c => c.Slug == "computing").Id, laptops.ParentId);
+        Assert.Equal(("لیپ ٹاپ", "ur"), (laptops.Name, laptops.Locale));
+        // Existing departments gain subcategories instead of being duplicated.
+        Assert.Single(categories, c => c.Slug == "books");
+        Assert.Contains(categories, c => c.Slug == "fiction" && c.ParentId == categories.Single(x => x.Slug == "books").Id);
+
+        var computing = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=computing&pageSize=100"))!;
+        Assert.Equal(100, computing.TotalCount);
+        var laptopPage = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=laptops"))!;
+        Assert.NotEmpty(laptopPage.Items);
+        Assert.All(laptopPage.Items, p => Assert.Equal("laptop", p.Kind));
+        var detail = (await client.GetFromJsonAsync<ProductDetailDto>($"/api/catalog/products/{laptopPage.Items[0].Slug}"))!;
+        Assert.Equal(["Screen size", "RAM", "Storage", "CPU", "GPU", "Display", "Battery", "Weight"], detail.Specifications.Select(s => s.Label));
+        var search = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?q=laptop"))!;
+        Assert.Contains(search.Items, p => p.Kind == "laptop");
+
+        // Detail filters: offered from what laptops are decided on; choosing one narrows results but keeps its alternatives.
+        var ram = Assert.Single(laptopPage.Attributes!, f => f.Label == "RAM");
+        Assert.True(ram.Values.Count >= 2);
+        Assert.Equal(laptopPage.TotalCount, ram.Values.Sum(v => v.Count));
+        Assert.Equal(ram.Values.Select(v => v.Value).OrderBy(CatalogService.LeadingNumber), ram.Values.Select(v => v.Value)); // 8 GB before 16 GB
+        Assert.True(CatalogService.LeadingNumber("512 GB SSD") < CatalogService.LeadingNumber("1 TB SSD") && CatalogService.LeadingNumber("750 ml") < CatalogService.LeadingNumber("1 l"));
+        var chosen = ram.Values[0];
+        var narrowed = (await client.GetFromJsonAsync<ProductPageDto>($"/api/catalog/products?category=laptops&pageSize=100&attr={Uri.EscapeDataString("RAM:" + chosen.Value)}"))!;
+        Assert.Equal(chosen.Count, narrowed.TotalCount);
+        Assert.All(narrowed.Items, p => Assert.Contains(p.Highlights, h => h.Label == "RAM" && h.Value == chosen.Value));
+        Assert.Equal(ram.Values.Select(v => v.Value), narrowed.Attributes!.Single(f => f.Label == "RAM").Values.Select(v => v.Value));
+        var two = (await client.GetFromJsonAsync<ProductPageDto>($"/api/catalog/products?category=laptops&attr={Uri.EscapeDataString("RAM:" + ram.Values[0].Value)}&attr={Uri.EscapeDataString("RAM:" + ram.Values[1].Value)}"))!;
+        Assert.Equal(ram.Values[0].Count + ram.Values[1].Count, two.TotalCount); // values of one label are alternatives
+        var books = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=books"))!;
+        Assert.Contains(books.Attributes!, f => f.Label == "Format");
+        Assert.DoesNotContain(books.Attributes!, f => f.Label is "Author" or "Pages"); // too many values to be a useful filter
+        Assert.Empty((await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?q=laptop"))!.Attributes!); // only within a category
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+        var variants = await db.ProductVariants.CountAsync();
+        Assert.Equal(24 + 2500, variants);
+        Assert.Equal(variants, await db.WarehouseStocks.CountAsync());
+        Assert.Equal(variants, await db.PriceRecords.Select(p => p.VariantId).Distinct().CountAsync());
+        Assert.False(await Commerce.Infrastructure.SyntheticCatalog.LoadAsync(db, 2500, CancellationToken.None));
+    }
+
     private sealed class FakeVerification : IHumanVerification
     {
         public bool Enabled => true;
@@ -1041,7 +1095,7 @@ public sealed class ShopperJourneyTests
         db.Products.Add(product);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool cacheEnabled, bool applyMigrations = true, Action<IServiceCollection>? services = null) =>
+    private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool cacheEnabled, bool applyMigrations = true, Action<IServiceCollection>? services = null, int syntheticProducts = 0) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             if (services is not null) builder.ConfigureTestServices(services);
@@ -1049,6 +1103,7 @@ public sealed class ShopperJourneyTests
             builder.UseSetting("DATABASE_URL", connectionString);
             builder.UseSetting("APPLY_MIGRATIONS", applyMigrations.ToString());
             builder.UseSetting("ALLOW_DEVELOPMENT_IDENTITY", "true");
+            builder.UseSetting("SYNTHETIC_CATALOG_PRODUCTS", syntheticProducts.ToString());
             builder.UseSetting("AUTH_AUTHORITY", TestIssuer);
             builder.UseSetting("AUTH_AUDIENCE", TestAudience);
             builder.UseSetting("CACHE_ENABLED", cacheEnabled.ToString());

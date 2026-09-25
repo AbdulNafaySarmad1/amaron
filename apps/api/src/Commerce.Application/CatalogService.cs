@@ -53,7 +53,8 @@ public sealed partial class CatalogService(ICommerceDbContext db, IReadModelCach
             var loc = ContentLocale(request.Locale);
             var query = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Variants.Any(v => v.IsActive && v.Inventory != null));
             var matches = string.IsNullOrWhiteSpace(request.Query) ? null : search.Match(request.Query, loc);
-            if (matches is not null) query = query.Join(matches, p => p.Id, m => m.ProductId, (p, _) => p);
+            // Matching is joined in last and once per statement: to filter, or for relevance order (which also filters).
+            IQueryable<Product> Matched(IQueryable<Product> source) => matches is null ? source : source.Join(matches, p => p.Id, m => m.ProductId, (p, _) => p);
             if (!string.IsNullOrWhiteSpace(request.Category))
             {
                 var scope = CategoryScope(await GetCategoriesAsync(CanonicalLocale, cancellationToken), request.Category);
@@ -64,30 +65,58 @@ public sealed partial class CatalogService(ICommerceDbContext db, IReadModelCach
                     (request.MinPrice == null || v.Price >= request.MinPrice) && (request.MaxPrice == null || v.Price <= request.MaxPrice)));
             if (request.MinimumRating is not null) query = query.Where(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) >= request.MinimumRating);
             var sellable = SellableStock.Query(db);
-            if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && sellable.Any(s => s.VariantId == v.Id && s.Units > 0)));
+            if (request.Available == true)
+            {
+                // Narrowed by category or text: a scalar subquery per matching product (EXISTS would be flattened into a
+                // semi-join that computes stock for every variant in the catalog). The whole catalog: one set-based pass.
+                // ponytail: unscoped "in stock only" still evaluates stock per variant (~1.5 s at 125k); keep a maintained
+                // in-stock flag if that listing becomes a real entry point.
+                var inStock = db.ProductVariants.Where(v => v.IsActive && sellable.Any(s => s.VariantId == v.Id && s.Units > 0)).Select(v => v.ProductId);
+                query = string.IsNullOrWhiteSpace(request.Category) && matches is null
+                    ? query.Where(p => inStock.Contains(p.Id))
+                    : query.Where(p => p.Variants.Where(v => v.IsActive).Max(v => sellable.Where(s => s.VariantId == v.Id).Select(s => (int?)s.Units).FirstOrDefault()) > 0);
+            }
 
             // Brand counts ignore the brand filter itself, so choosing one brand still shows the alternatives.
-            var brandRows = await query.GroupBy(p => p.Brand).Select(g => new { Value = g.Key, Count = g.Count() })
+            var brandRows = await Matched(query).GroupBy(p => p.Brand).Select(g => new { Value = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count).ThenBy(x => x.Value).Take(20).ToListAsync(cancellationToken);
             var brands = brandRows.Select(x => new FacetValueDto(x.Value, x.Count)).ToList();
             if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
-
-            query = request.Sort?.ToLowerInvariant() switch
+            // Detail filters ("RAM:16 GB"): values of one label are alternatives, different labels all apply.
+            var details = (request.Attributes ?? []).Select(a => a.Split(':', 2)).Where(a => a.Length == 2)
+                .GroupBy(a => a[0].Trim(), a => a[1].Trim()).ToDictionary(g => g.Key, g => g.Distinct().ToArray());
+            IQueryable<Product> WithDetails(IQueryable<Product> source, string? except = null)
             {
-                "price-asc" => query.OrderBy(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
-                "price-desc" => query.OrderByDescending(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
-                "rating" => query.OrderByDescending(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0).ThenBy(p => p.Id),
-                "newest" => query.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
-                "name" => query.OrderBy(p => p.Title).ThenBy(p => p.Id),
+                foreach (var (label, values) in details)
+                    if (label != except) source = source.Where(p => p.Attributes.Any(a => a.Label == label && values.Contains(a.Value)));
+                return source;
+            }
+            var undetailed = query;
+            query = WithDetails(query);
+
+            var filtered = Matched(query);
+            var total = await filtered.CountAsync(cancellationToken);
+            IReadOnlyList<AttributeFacetDto> attributeFacets = string.IsNullOrWhiteSpace(request.Category) ? []
+                : await AttributeFacetsAsync(Matched, undetailed, WithDetails, details.Keys, total, cancellationToken);
+            var ordered = request.Sort?.ToLowerInvariant() switch
+            {
+                "price-asc" => filtered.OrderBy(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
+                "price-desc" => filtered.OrderByDescending(p => p.Variants.Where(v => v.IsActive).Min(v => v.Price)).ThenBy(p => p.Id),
+                // ponytail: rating is averaged per product at query time (~0.7 s over the whole catalog, fine within a category or
+                // behind the homepage cache); store a rating summary on products if unscoped rating sorts become hot.
+                "rating" => filtered.OrderByDescending(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0).ThenBy(p => p.Id),
+                "newest" => filtered.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
+                "name" => filtered.OrderBy(p => p.Title).ThenBy(p => p.Id),
                 // With a query, the default order is relevance; the rank comes from a join, never a per-row subquery.
                 _ when matches is not null => query.Join(matches, p => p.Id, m => m.ProductId, (p, m) => new { p, m.Rank }).OrderByDescending(x => x.Rank).ThenBy(x => x.p.Id).Select(x => x.p),
-                _ => query.OrderBy(p => p.Title).ThenBy(p => p.Id)
+                _ => filtered.OrderBy(p => p.Title).ThenBy(p => p.Id)
             };
-
-            var total = await query.CountAsync(cancellationToken);
-            var rows = await ProjectCards(query.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize), loc).ToListAsync(cancellationToken);
+            // Page on the sort keys alone, then project cards for just this page: projecting first would compute prices,
+            // ratings and stock for every matching product before the sort.
+            var pageIds = await ordered.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize).Select(p => p.Id).ToListAsync(cancellationToken);
+            var cards = (await ProjectCards(db.Products.AsNoTracking().Where(p => pageIds.Contains(p.Id)), loc).ToListAsync(cancellationToken)).ToDictionary(c => c.Id);
             activity?.SetTag("commerce.search.results", total);
-            return new ProductPageDto(rows.Select(MapCard).ToList(), request.Page, request.PageSize, total, (int)Math.Ceiling((double)total / request.PageSize), brands);
+            return new ProductPageDto(pageIds.Where(cards.ContainsKey).Select(id => MapCard(cards[id])).ToList(), request.Page, request.PageSize, total, (int)Math.Ceiling((double)total / request.PageSize), brands, attributeFacets);
         }
         catch (Exception exception)
         {
@@ -194,7 +223,7 @@ public sealed partial class CatalogService(ICommerceDbContext db, IReadModelCach
         var sellable = SellableStock.Query(db);
         var pick = await db.ProductRelationships.AsNoTracking()
             .Where(r => productIds.Contains(r.SourceProductId) && !productIds.Contains(r.TargetProductId) && SetupTypes.Contains(r.Type)
-                && r.Target.Status == ProductStatus.Active && r.Target.Variants.Any(v => v.IsActive && sellable.Any(s => s.VariantId == v.Id && s.Units > 0)))
+                && r.Target.Status == ProductStatus.Active && r.Target.Variants.Where(v => v.IsActive).Max(v => sellable.Where(s => s.VariantId == v.Id).Select(s => (int?)s.Units).FirstOrDefault()) > 0)
             .OrderByDescending(r => r.RelevanceScore).ThenBy(r => r.TargetProductId).Select(r => new { r.TargetProductId, r.Reason }).FirstOrDefaultAsync(cancellationToken);
         if (pick is null) return null;
         var card = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Id == pick.TargetProductId), ContentLocale(locale)).SingleAsync(cancellationToken);
@@ -271,8 +300,47 @@ public sealed partial class CatalogService(ICommerceDbContext db, IReadModelCach
     public static IReadOnlyList<SpecDto> Highlights(IEnumerable<ProductAttribute> attributes) =>
         attributes.Where(a => a.Highlight && !string.IsNullOrWhiteSpace(a.Value)).Take(3).Select(a => new SpecDto(a.Label, a.Value)).ToList();
 
+    /// <summary>
+    /// Filters from the details shoppers decide on (the attributes cards highlight), within a category only: a label is
+    /// offered when most results have it and it has a handful of values (RAM, screen size, format; not author or pages).
+    /// A chosen label's counts ignore its own choice, so its alternatives stay visible, as with brands.
+    /// </summary>
+    private static async Task<IReadOnlyList<AttributeFacetDto>> AttributeFacetsAsync(Func<IQueryable<Product>, IQueryable<Product>> matched, IQueryable<Product> query,
+        Func<IQueryable<Product>, string?, IQueryable<Product>> withDetails, IEnumerable<string> chosen, int total, CancellationToken cancellationToken)
+    {
+        // Filter by label before grouping: EF cannot translate member access on the constructed FacetRow.
+        static IQueryable<FacetRow> Count(IQueryable<Product> source, string? label = null) => source.SelectMany(p => p.Attributes.Where(a => a.Highlight && (label == null || a.Label == label)))
+            .GroupBy(a => new { a.Label, a.Value }).Select(g => new FacetRow(g.Key.Label, g.Key.Value, g.Count()));
+        var rows = await Count(matched(withDetails(query, null))).ToListAsync(cancellationToken);
+        foreach (var label in chosen)
+        {
+            rows.RemoveAll(r => r.Label == label);
+            rows.AddRange(await Count(matched(withDetails(query, label)), label).ToListAsync(cancellationToken));
+        }
+        var chosenSet = chosen.ToHashSet();
+        return rows.GroupBy(r => r.Label)
+            .Where(g => chosenSet.Contains(g.Key) || (g.Count() is >= 2 and <= 15 && g.Sum(r => r.Count) >= total * 0.3))
+            .OrderByDescending(g => g.Sum(r => r.Count)).ThenBy(g => g.Key).Take(6)
+            .Select(g => new AttributeFacetDto(g.Key, g.OrderBy(r => LeadingNumber(r.Value)).ThenBy(r => r.Value, StringComparer.Ordinal).Take(15).Select(r => new FacetValueDto(r.Value, r.Count)).ToList()))
+            .ToList();
+    }
+
+    private sealed record FacetRow(string Label, string Value, int Count);
+
+    /// <summary>"1,200 W" -> 1200, "13.3 in" -> 13.3 and "1 TB" -> 1000 (GB), so sizes sort by size; values without a number sort after.</summary>
+    public static double LeadingNumber(string value)
+    {
+        var digits = new string(value.TakeWhile(c => char.IsDigit(c) || c is ',' or '.').ToArray());
+        if (!double.TryParse(digits.Replace(",", ""), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number)) return double.MaxValue;
+        var unit = new string(value[digits.Length..].TrimStart().TakeWhile(char.IsLetter).ToArray());
+        return number * (UnitScale.TryGetValue(unit, out var scale) ? scale : 1);
+    }
+
+    private static readonly Dictionary<string, double> UnitScale = new(StringComparer.Ordinal) { ["TB"] = 1000, ["MB"] = 0.001, ["kg"] = 1000, ["L"] = 1000, ["l"] = 1000 };
+
     private static void ValidateSearch(SearchRequest request)
     {
+        if (request.Attributes is { Count: > 12 } || request.Attributes?.Any(a => a.Length > 300 || !a.Contains(':')) == true) throw CommerceErrors.Validation("Detail filters must be at most 12 'Label:Value' pairs.");
         if (request.Page < 1 || request.PageSize is < 1 or > 100) throw CommerceErrors.Validation("Page must be positive and pageSize must be between 1 and 100.");
         if (request.Query?.Length > 120) throw CommerceErrors.Validation("Search query cannot exceed 120 characters.");
         if (request.MinPrice < 0 || request.MaxPrice < 0 || request.MinPrice > request.MaxPrice) throw CommerceErrors.Validation("Price range is invalid.");

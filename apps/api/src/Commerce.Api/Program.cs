@@ -296,7 +296,7 @@ api.MapPost("/payments/webhooks/{provider}", async (HttpContext http, string pro
     return Results.Accepted();
 }).AllowAnonymous().RequireRateLimiting("admin").WithRequestTimeout("cart-write");
 api.MapGet("/catalog/categories", async (HttpContext http, string? locale, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetCategoriesAsync(locale, ct))).CacheOutput("public-short").RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
-api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, string? locale, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24, locale), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search").AllowAnonymous();
+api.MapGet("/catalog/products", (string? q, string? category, string? brand, decimal? minPrice, decimal? maxPrice, decimal? minimumRating, bool? available, string? sort, int? page, int? pageSize, string? locale, string[]? attr, CatalogService service, CancellationToken ct) => service.SearchAsync(new SearchRequest(q, category, brand, minPrice, maxPrice, minimumRating, available, sort, page ?? 1, pageSize ?? 24, locale, attr), ct)).RequireRateLimiting("catalog").WithRequestTimeout("search").AllowAnonymous();
 api.MapGet("/catalog/products/{slug}", async (HttpContext http, string slug, string? locale, CatalogService service, CancellationToken ct) => ConditionalJson(http, await service.GetProductAsync(slug, locale, ct))).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 api.MapPost("/catalog/products/batch", (BatchProductsRequest request, string? locale, CatalogService service, CancellationToken ct) => service.GetBatchAsync(request.ProductIds, locale, ct)).RequireRateLimiting("catalog").WithRequestTimeout("catalog").AllowAnonymous();
 api.MapGet("/catalog/products/addition", async (string productIds, string? locale, CatalogService service, CancellationToken ct) =>
@@ -460,6 +460,11 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue("APPLY_MIGRATI
     var db = scope.ServiceProvider.GetRequiredService<CommerceDbContext>();
     await db.Database.MigrateAsync();
     await CommerceSeeder.SeedAsync(db, CancellationToken.None);
+    if (await SyntheticCatalog.LoadAsync(db, app.Configuration.GetValue("SYNTHETIC_CATALOG_PRODUCTS", 0), CancellationToken.None))
+    {
+        var cache = scope.ServiceProvider.GetRequiredService<IReadModelCache>();
+        foreach (var tag in new[] { "categories", "products", "homepage", "search-suggestions" }) await cache.RemoveByTagAsync(tag, CancellationToken.None);
+    }
 }
 
 await app.RunAsync();
