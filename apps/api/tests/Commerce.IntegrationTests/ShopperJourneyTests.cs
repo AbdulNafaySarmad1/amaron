@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
@@ -50,7 +51,7 @@ public sealed class ShopperJourneyTests
         conditionalCategories.Headers.TryAddWithoutValidation("If-None-Match", categoriesEtag);
         Assert.Equal(HttpStatusCode.NotModified, (await client.SendAsync(conditionalCategories)).StatusCode);
 
-        var search = await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?q=keyboard&category=home-kitchen&sort=price-asc&pageSize=5");
+        var search = await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?q=keyboard&category=electronics&sort=price-asc&pageSize=5");
         Assert.Single(search!.Items);
         Assert.Equal("Mechanical Keyboard", search.Items[0].Title);
 
@@ -732,6 +733,79 @@ public sealed class ShopperJourneyTests
         Assert.Equal(HttpStatusCode.TooManyRequests, responses[5].StatusCode);
         Assert.True(responses[5].Headers.Contains("Retry-After"));
         foreach (var response in responses) response.Dispose();
+    }
+
+    [Fact]
+    public async Task Category_queries_return_only_their_subtree_and_recommendations_stay_separate()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        using var client = factory.CreateClient();
+
+        async Task<string[]> Titles(string category, string? q = null) =>
+            (await client.GetFromJsonAsync<ProductPageDto>($"/api/catalog/products?category={category}&pageSize=100{(q is null ? "" : $"&q={q}")}"))!
+                .Items.Select(x => x.Title).Order().ToArray();
+
+        string[] electronics = ["Cable Management Kit", "E-Reader Cover", "Ergonomic Mouse", "Mechanical Keyboard", "Noise-Cancelling Headphones", "Portable Speaker", "Studio Microphone", "USB-C Travel Hub", "Webcam Light", "Wireless Charging Stand", "Adjustable Laptop Stand"];
+        string[] books = ["Cookbook for Weeknights", "Distributed Systems Field Guide", "Platform Engineering Handbook"];
+        Assert.Equal(electronics.Order(), await Titles("electronics"));
+        Assert.Equal(books.Order(), await Titles("books"));
+        Assert.DoesNotContain("Cast Iron Skillet", await Titles("books"));
+        Assert.Empty(await Titles("electronics", "handbook"));
+        Assert.Empty(await Titles("no-such-category"));
+
+        // A hierarchy the seed does not have: Electronics > Audio, Appliances > Refrigerators.
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            var electronicsId = (await db.Categories.SingleAsync(x => x.Slug == "electronics")).Id;
+            var audio = new Commerce.Domain.Category { Id = Guid.NewGuid(), ParentId = electronicsId, Slug = "audio", Name = "Audio" };
+            var appliances = new Commerce.Domain.Category { Id = Guid.NewGuid(), Slug = "appliances", Name = "Appliances" };
+            var refrigerators = new Commerce.Domain.Category { Id = Guid.NewGuid(), ParentId = appliances.Id, Slug = "refrigerators", Name = "Refrigerators" };
+            db.Categories.AddRange(audio, appliances, refrigerators);
+            AddProduct(db, audio, "Reference Studio Headphones");
+            AddProduct(db, refrigerators, "Frost 500L French-Door Refrigerator");
+            AddProduct(db, refrigerators, "Compact 90L Bar Refrigerator");
+            AddProduct(db, appliances, "Chest Deep Freezer");
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<IReadModelCache>().RemoveByTagAsync("categories", CancellationToken.None);
+        }
+
+        Assert.Equal(electronics.Append("Reference Studio Headphones").Order(), await Titles("electronics"));
+        Assert.Equal(["Reference Studio Headphones"], await Titles("audio"));
+        Assert.Equal(["Chest Deep Freezer", "Compact 90L Bar Refrigerator", "Frost 500L French-Door Refrigerator"], await Titles("appliances"));
+        Assert.Equal(["Compact 90L Bar Refrigerator", "Frost 500L French-Door Refrigerator"], await Titles("refrigerators"));
+        Assert.Equal(books.Order(), await Titles("books"));
+
+        // Recommendations come from the product's own category and never alter category results.
+        var fridge = await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/frost-500l-french-door-refrigerator");
+        Assert.Equal(["Compact 90L Bar Refrigerator"], fridge!.Recommendations.Select(x => x.Title));
+        var headphones = await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/noise-cancelling-headphones");
+        Assert.NotEmpty(headphones!.Recommendations);
+        Assert.All(headphones.Recommendations, x => Assert.Contains(x.Title, electronics));
+        Assert.DoesNotContain(headphones.Recommendations, x => x.Title == "Noise-Cancelling Headphones");
+        Assert.Equal(["Compact 90L Bar Refrigerator", "Frost 500L French-Door Refrigerator"], await Titles("refrigerators"));
+
+        // Databases seeded by the old round-robin seeder are repaired by FixSeedProductCategories.
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var migrator = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>().GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            await migrator.MigrateAsync("20260921140928_AddPaymentOrchestration");
+            Assert.Contains("Platform Engineering Handbook", await Titles("electronics"));
+            await migrator.MigrateAsync();
+        }
+        Assert.Equal(books.Order(), await Titles("books"));
+        Assert.Equal(electronics.Append("Reference Studio Headphones").Order(), await Titles("electronics"));
+    }
+
+    private static void AddProduct(Commerce.Infrastructure.CommerceDbContext db, Commerce.Domain.Category category, string title)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var product = new Commerce.Domain.Product { Id = Guid.NewGuid(), CategoryId = category.Id, Slug = title.ToLowerInvariant().Replace(' ', '-'), Title = title, Brand = "Test", Description = title, CreatedAt = now, UpdatedAt = now };
+        var variantId = Guid.NewGuid();
+        product.Variants.Add(new Commerce.Domain.ProductVariant { Id = variantId, ProductId = product.Id, Sku = $"T-{variantId:N}"[..20], Name = "Standard", Price = 100m, Inventory = new Commerce.Domain.InventoryItem { VariantId = variantId, QuantityOnHand = 5, UpdatedAt = now } });
+        db.Products.Add(product);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool cacheEnabled, bool applyMigrations = true) =>

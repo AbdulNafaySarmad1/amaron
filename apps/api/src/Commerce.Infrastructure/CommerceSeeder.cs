@@ -13,12 +13,14 @@ public static class CommerceSeeder
         var home = new Category { Id = Id(2), Slug = "home-kitchen", Name = "Home & Kitchen", SortOrder = 2 };
         var books = new Category { Id = Id(3), Slug = "books", Name = "Books", SortOrder = 3 };
         db.Categories.AddRange(electronics, home, books);
-        var categories = new[] { electronics, home, books };
-        var titles = new[] { "Noise-Cancelling Headphones", "Mechanical Keyboard", "Portable Speaker", "Smart Reading Lamp", "Pour-Over Coffee Set", "Cast Iron Skillet", "Platform Engineering Handbook", "Distributed Systems Field Guide", "Everyday Backpack", "USB-C Travel Hub", "Linen Sheet Set", "Digital Kitchen Scale", "Ergonomic Mouse", "Desk Organizer", "Wireless Charging Stand", "Insulated Water Bottle", "Compact Air Purifier", "E-Reader Cover", "Studio Microphone", "Adjustable Laptop Stand", "French Press", "Cookbook for Weeknights", "Cable Management Kit", "Webcam Light" };
+        // Each title names its category explicitly. Product IDs are positional (Id(100 + i)); migration
+        // FixSeedProductCategories repairs databases seeded by the old round-robin assignment.
+        var catalog = SeedCatalog(electronics, home, books);
+        var titles = catalog.Select(x => x.Title).ToArray();
         var now = DateTimeOffset.UtcNow;
         for (var i = 0; i < titles.Length; i++)
         {
-            var productId = Id(100 + i); var variantId = Id(1000 + i); var category = categories[i % categories.Length];
+            var productId = Id(100 + i); var variantId = Id(1000 + i); var category = catalog[i].Category;
             var product = new Product { Id = productId, CategoryId = category.Id, Slug = Slug(titles[i]), Title = titles[i], Brand = i % 3 == 0 ? "Northstar" : i % 3 == 1 ? "Harbor" : "Foundry", Description = $"A reliable {titles[i].ToLowerInvariant()} designed for everyday use.", Status = ProductStatus.Active, IsFeatured = i < 12, CreatedAt = now.AddDays(-i), UpdatedAt = now };
             var price = 19.99m + i * 7.25m;
             product.Variants.Add(new ProductVariant { Id = variantId, ProductId = productId, Sku = $"AM-{i + 1:0000}", Name = "Standard", Price = price, ListPrice = i % 4 == 0 ? 29.99m + i * 7.25m : null, UnitCost = decimal.Round(price * .58m, 2), Currency = "USD", IsActive = true, Inventory = new InventoryItem { VariantId = variantId, QuantityOnHand = 5 + i, UpdatedAt = now } });
@@ -55,6 +57,16 @@ public static class CommerceSeeder
         }
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    private static (string Title, Category Category)[] SeedCatalog(Category electronics, Category home, Category books) =>
+    [
+        ("Noise-Cancelling Headphones", electronics), ("Mechanical Keyboard", electronics), ("Portable Speaker", electronics), ("Smart Reading Lamp", home),
+        ("Pour-Over Coffee Set", home), ("Cast Iron Skillet", home), ("Platform Engineering Handbook", books), ("Distributed Systems Field Guide", books),
+        ("Everyday Backpack", home), ("USB-C Travel Hub", electronics), ("Linen Sheet Set", home), ("Digital Kitchen Scale", home),
+        ("Ergonomic Mouse", electronics), ("Desk Organizer", home), ("Wireless Charging Stand", electronics), ("Insulated Water Bottle", home),
+        ("Compact Air Purifier", home), ("E-Reader Cover", electronics), ("Studio Microphone", electronics), ("Adjustable Laptop Stand", electronics),
+        ("French Press", home), ("Cookbook for Weeknights", books), ("Cable Management Kit", electronics), ("Webcam Light", electronics),
+    ];
 
     private static Guid Id(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
     private static string Slug(string value) => value.ToLowerInvariant().Replace("-", " ").Replace(" ", "-");

@@ -33,7 +33,11 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
                 var term = request.Query.Trim().ToLower();
                 query = query.Where(p => p.Title.ToLower().Contains(term) || p.Brand.ToLower().Contains(term) || p.Description.ToLower().Contains(term));
             }
-            if (!string.IsNullOrWhiteSpace(request.Category)) query = query.Where(p => p.Category.Slug == request.Category);
+            if (!string.IsNullOrWhiteSpace(request.Category))
+            {
+                var scope = CategoryScope(await GetCategoriesAsync(cancellationToken), request.Category);
+                query = query.Where(p => scope.Contains(p.CategoryId));
+            }
             if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
             if (request.MinPrice is not null || request.MaxPrice is not null)
                 query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory != null &&
@@ -100,10 +104,26 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         return rows.Select(MapCard).ToList();
     }
 
-    public async Task<IReadOnlyList<ProductCardDto>> GetRelatedAsync(Guid productId, string category, int count, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ProductCardDto>> GetRelatedAsync(Guid productId, int count, CancellationToken cancellationToken)
     {
-        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Id != productId && p.Category.Name == category && p.Variants.Any(v => v.IsActive && v.Inventory != null)).OrderByDescending(p => p.IsFeatured).Take(Math.Clamp(count, 1, 12))).ToListAsync(cancellationToken);
+        // Keyed on the category ID: names are display text and are not unique across parents.
+        var categoryId = db.Products.Where(x => x.Id == productId).Select(x => x.CategoryId);
+        var rows = await ProjectCards(db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Id != productId && categoryId.Contains(p.CategoryId) && p.Variants.Any(v => v.IsActive && v.Inventory != null)).OrderByDescending(p => p.IsFeatured).ThenBy(p => p.Id).Take(Math.Clamp(count, 1, 12))).ToListAsync(cancellationToken);
         return rows.Select(MapCard).ToList();
+    }
+
+    /// <summary>The category and all of its descendants. An unknown slug yields an empty scope, never "all products".</summary>
+    public static IReadOnlyList<Guid> CategoryScope(IReadOnlyList<CategoryDto> categories, string slug)
+    {
+        var root = categories.FirstOrDefault(c => string.Equals(c.Slug, slug, StringComparison.OrdinalIgnoreCase));
+        if (root is null) return [];
+        var children = categories.Where(c => c.ParentId is not null).ToLookup(c => c.ParentId!.Value);
+        var scope = new HashSet<Guid> { root.Id };
+        var pending = new Queue<Guid>([root.Id]);
+        while (pending.TryDequeue(out var id))
+            foreach (var child in children[id])
+                if (scope.Add(child.Id)) pending.Enqueue(child.Id);
+        return scope.ToList();
     }
 
     private async Task<ProductDetailDto?> LoadProductAsync(string slug, CancellationToken token)

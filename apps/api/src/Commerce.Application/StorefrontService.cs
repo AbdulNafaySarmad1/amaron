@@ -20,7 +20,7 @@ public sealed class StorefrontService(CatalogService catalog, IReadModelCache ca
         var product = await catalog.GetProductAsync(slug, cancellationToken);
         try
         {
-            var related = await catalog.GetRelatedAsync(product.Id, product.Category, 8, cancellationToken);
+            var related = await catalog.GetRelatedAsync(product.Id, 8,cancellationToken);
             return new StorefrontProductDto(product, related, false);
         }
         catch (OperationCanceledException) { throw; }
