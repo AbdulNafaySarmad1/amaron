@@ -27,7 +27,7 @@ export function HomePage({ home }: { home: HomeModel }) {
       </section>
 
       <section className="category-strip" aria-label="Shop by category">
-        {home.navigation.map((category, index) => <Link href={`/search?category=${category.slug}`} key={category.id}><span>{String(index + 1).padStart(2, "0")}</span>{category.name}<ArrowIcon /></Link>)}
+        {home.navigation.map((category, index) => <Link href={`/c/${category.slug}`} key={category.id}><span>{String(index + 1).padStart(2, "0")}</span>{category.name}<ArrowIcon /></Link>)}
       </section>
 
       {home.rails.map((rail) => (

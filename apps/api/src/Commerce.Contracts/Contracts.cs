@@ -2,12 +2,14 @@ namespace Commerce.Contracts;
 
 public sealed record MoneyDto(decimal Amount, string Currency);
 public sealed record ImageDto(string Url, string MimeType, int? Width, int? Height);
-public sealed record ProductCardDto(Guid Id, Guid DefaultVariantId, string Slug, string Title, string Brand, ImageDto? PrimaryImage, MoneyDto Price, MoneyDto? ListPrice, decimal Rating, int ReviewCount, string AvailabilityHint, string[] Badges);
+public sealed record SpecDto(string Label, string Value);
+public sealed record ProductCardDto(Guid Id, Guid DefaultVariantId, string Slug, string Title, string Brand, ImageDto? PrimaryImage, MoneyDto Price, MoneyDto? ListPrice, decimal Rating, int ReviewCount, string AvailabilityHint, string[] Badges, string Kind, IReadOnlyList<SpecDto> Highlights);
 public sealed record VariantDto(Guid Id, string Sku, string Name, MoneyDto Price, MoneyDto? ListPrice, string AvailabilityHint);
 public sealed record AssetDto(Guid Id, string Type, string Url, string MimeType, int? Width, int? Height, long? SizeBytes, string? Integrity, int SortOrder);
-public sealed record ProductDetailDto(Guid Id, string Slug, string Title, string Brand, string Description, string Category, IReadOnlyList<VariantDto> Variants, IReadOnlyList<AssetDto> Assets, decimal Rating, int ReviewCount);
+public sealed record ProductDetailDto(Guid Id, string Slug, string Title, string Brand, string Description, string Category, IReadOnlyList<VariantDto> Variants, IReadOnlyList<AssetDto> Assets, decimal Rating, int ReviewCount, string CategorySlug, string Kind, IReadOnlyList<SpecDto> Specifications);
 public sealed record CategoryDto(Guid Id, string Slug, string Name, Guid? ParentId);
-public sealed record ProductPageDto(IReadOnlyList<ProductCardDto> Items, int Page, int PageSize, int TotalCount, int TotalPages);
+public sealed record FacetValueDto(string Value, int Count);
+public sealed record ProductPageDto(IReadOnlyList<ProductCardDto> Items, int Page, int PageSize, int TotalCount, int TotalPages, IReadOnlyList<FacetValueDto> Brands);
 public sealed record SearchRequest(string? Query, string? Category, string? Brand, decimal? MinPrice, decimal? MaxPrice, decimal? MinimumRating, bool? Available, string? Sort, int Page = 1, int PageSize = 24);
 public sealed record SuggestionDto(string Type, string Value, string? Slug);
 public sealed record BatchProductsRequest(IReadOnlyList<Guid> ProductIds);

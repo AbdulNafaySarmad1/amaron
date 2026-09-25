@@ -9,12 +9,12 @@ import { useRequireSignIn } from "@/components/shell/sign-in-gate";
 import { format } from "@/i18n/dictionary";
 import { CATALOG_LANG, stripLocale } from "@/i18n/config";
 import { browserRequest } from "@/lib/api";
+import { categoryPath } from "@/lib/categories";
 import type { Category } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
 import { useSavedStore } from "@/store/saved-store";
 import { useSearchMode } from "@/store/search-store";
 
-const categoryHref = (slug: string) => `/search?category=${encodeURIComponent(slug)}`;
 
 function hidePopover(id: string) {
   document.getElementById(id)?.hidePopover();
@@ -23,6 +23,12 @@ function hidePopover(id: string) {
 /** Path without the locale, for active-state checks: "/ur/saved" -> "/saved". */
 export function useAppPath() {
   return stripLocale(usePathname());
+}
+
+/** The category whose page is open, if any. Search defaults to it so a shopper never silently leaves the space. */
+export function useCategoryScope(categories: Category[]) {
+  const [, section, slug] = useAppPath().split("/");
+  return section === "c" ? categories.find((category) => category.slug === slug) : undefined;
 }
 
 export function SiteHeader({ categories }: { categories: Category[] }) {
@@ -34,6 +40,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
   const openSearch = useSearchMode((state) => state.open);
   const savedCount = useSavedStore((state) => state.ids.length);
   const roots = categories.filter((category) => !category.parentId);
+  const scope = useCategoryScope(categories);
 
   async function logout() {
     const result = await browserRequest<{ logoutUrl: string }>(`/api/auth/logout?locale=${locale}`, { method: "POST" });
@@ -52,7 +59,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
 
         <button type="button" className="search-trigger" onClick={openSearch} aria-haspopup="dialog">
           <SearchIcon />
-          <span>{t.search.placeholder}</span>
+          <span>{scope ? format(t.category.searchIn, { category: scope.name }) : t.search.placeholder}</span>
           <kbd aria-hidden="true">/</kbd>
         </button>
 
@@ -85,10 +92,10 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
         <ul>
           {roots.map((root) => (
             <li key={root.id}>
-              <Link className="t-h3" href={categoryHref(root.slug)} onClick={() => hidePopover("category-panel")} lang={CATALOG_LANG} dir="auto">{root.name}</Link>
+              <Link className="t-h3" href={categoryPath(root.slug)} onClick={() => hidePopover("category-panel")} lang={CATALOG_LANG} dir="auto">{root.name}</Link>
               <ul>
                 {categories.filter((child) => child.parentId === root.id).map((child) => (
-                  <li key={child.id}><Link href={categoryHref(child.slug)} onClick={() => hidePopover("category-panel")} lang={CATALOG_LANG} dir="auto">{child.name}</Link></li>
+                  <li key={child.id}><Link href={categoryPath(child.slug)} onClick={() => hidePopover("category-panel")} lang={CATALOG_LANG} dir="auto">{child.name}</Link></li>
                 ))}
               </ul>
             </li>

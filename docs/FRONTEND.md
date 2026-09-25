@@ -16,6 +16,12 @@ UI strings live in `src/i18n/dictionaries/*.json`; a missing translation falls b
 
 Content without a translation is marked as English so it is laid out left-to-right and read correctly by screen readers: whole pages via `<Untranslated>` (remove it once a page's copy is in the dictionaries), and catalog names via `lang={CATALOG_LANG} dir="auto"`. Arabic-script CSS rules use `x:lang(ur)`, never `:lang(ur) x`, so they do not reach nested English content.
 
+## Category spaces and product presentation
+
+Each category has its own page at `/{locale}/c/{slug}`; results always come from the category's subtree (enforced by the API, not the page). Old `/search?category=` links redirect there. On a category page the header search, search mode and suggestions are scoped to that category by default; a scoped search with no results says so and offers "Search all products" rather than widening silently. Brand counts come from the API as a facet computed before the brand filter is applied.
+
+Products carry a `kind` (presentation only, e.g. `book` renders a cover) and ordered attributes. Attributes flagged as highlights (at most three) summarise the product on cards; the full list is the product's specifications. Nothing in React branches on a specific product type beyond choosing that presentation.
+
 ## Guests and account-only actions
 
 Browsing, search and Saved work without an account. Account-only actions (the bag today, reviews later) call `useRequireSignIn()` from `sign-in-gate.tsx`; for guests it opens a prompt explaining why, with sign-in returning to the same page and query. Sign-out returns to the homepage in the language the shopper was using.

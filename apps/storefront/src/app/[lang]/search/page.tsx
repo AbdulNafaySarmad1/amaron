@@ -3,6 +3,7 @@ import { Link } from "@/components/providers/locale-provider";
 import { ProductGrid } from "@/components/product/product-grid";
 import { currentLocale } from "@/i18n/server";
 import { localizePath } from "@/i18n/config";
+import { redirect } from "next/navigation";
 import { serverGet } from "@/lib/api";
 import type { Category, ProductPage } from "@/lib/types";
 
@@ -18,6 +19,13 @@ function value(parameters: SearchParameters, key: string) {
 export default async function SearchPage({ searchParams }: { searchParams: Promise<SearchParameters> }) {
   const [parameters, locale] = await Promise.all([searchParams, currentLocale()]);
   const searchPath = localizePath(locale, "/search");
+  // Categories have their own pages; keep old /search?category= links working by sending them there.
+  const categoryParam = value(parameters, "category");
+  if (categoryParam) {
+    const rest = new URLSearchParams();
+    for (const key of ["q", "brand", "minPrice", "maxPrice", "minimumRating", "available", "sort", "page"]) { const entry = value(parameters, key); if (entry) rest.set(key, entry); }
+    redirect(localizePath(locale, `/c/${encodeURIComponent(categoryParam)}${rest.size ? `?${rest}` : ""}`));
+  }
   const query = new URLSearchParams();
   for (const key of ["q", "category", "brand", "minPrice", "maxPrice", "minimumRating", "available", "sort", "page"]) {
     const entry = value(parameters, key);
@@ -50,7 +58,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         <aside className="filters">
           <form action={searchPath} method="get">
             {searchTerm ? <input type="hidden" name="q" value={searchTerm} /> : null}
-            <fieldset><legend>Category</legend><label><input type="radio" name="category" value="" defaultChecked={!category} /> All goods</label>{categories.map((item) => <label key={item.id}><input type="radio" name="category" value={item.slug} defaultChecked={category === item.slug} /> {item.name}</label>)}</fieldset>
+            <fieldset><legend>Category</legend>{categories.filter((item) => !item.parentId).map((item) => <Link key={item.id} href={`/c/${item.slug}${searchTerm ? `?q=${encodeURIComponent(searchTerm)}` : ""}`}>{item.name}</Link>)}</fieldset>
             <fieldset><legend>Price</legend><div className="price-inputs"><label><span>Min</span><input type="number" name="minPrice" min="0" placeholder="$0" defaultValue={value(parameters, "minPrice")} /></label><label><span>Max</span><input type="number" name="maxPrice" min="0" placeholder="$500" defaultValue={value(parameters, "maxPrice")} /></label></div></fieldset>
             <fieldset><legend>Rating</legend><select name="minimumRating" defaultValue={value(parameters, "minimumRating") ?? ""}><option value="">Any rating</option><option value="4">4 stars and up</option><option value="4.5">4.5 stars and up</option></select></fieldset>
             <label className="check-row"><input type="checkbox" name="available" value="true" defaultChecked={value(parameters, "available") === "true"} /> In stock only</label>

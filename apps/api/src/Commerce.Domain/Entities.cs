@@ -41,6 +41,10 @@ public sealed class Product
     public string Description { get; set; } = "";
     public ProductStatus Status { get; set; } = ProductStatus.Active;
     public bool IsFeatured { get; set; }
+    /// <summary>Presentation family ("book", "laptop", "refrigerator"...). Drives layout only, never pricing or filtering rules.</summary>
+    public string Kind { get; set; } = "general";
+    /// <summary>Ordered specifications. Those marked Highlight (at most three are shown) summarise the product on cards.</summary>
+    public List<ProductAttribute> Attributes { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public uint Version { get; set; }
@@ -48,6 +52,13 @@ public sealed class Product
     public List<ProductVariant> Variants { get; set; } = [];
     public List<ProductAsset> Assets { get; set; } = [];
     public List<Review> Reviews { get; set; } = [];
+}
+
+public sealed class ProductAttribute
+{
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public bool Highlight { get; set; }
 }
 
 public sealed class ProductVariant

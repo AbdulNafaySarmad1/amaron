@@ -40,7 +40,7 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
 
   return (
     <main className="product-page">
-      <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href="/">Home</Link><span>/</span><Link href="/search">Goods</Link><span>/</span><span>{product.title}</span></nav>
+      <nav className="breadcrumbs" aria-label="Breadcrumb"><ol><li><Link href="/">Home</Link></li><li><Link href={`/c/${product.categorySlug}`}>{product.category}</Link></li><li><span aria-current="page">{product.title}</span></li></ol></nav>
       <section className="product-detail">
         <motion.div className="product-gallery" initial={false} animate={{ opacity: 1 }} transition={{ duration: motionTokens.duration.cinematic }}>
           <ProductVisual slug={product.slug} title={product.title} />

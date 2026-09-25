@@ -81,6 +81,7 @@ public sealed class CommerceDbContext(DbContextOptions<CommerceDbContext> option
         model.Entity<Product>(e =>
         {
             e.ToTable("products"); e.HasKey(x => x.Id); e.Property(x => x.Slug).HasMaxLength(160); e.Property(x => x.Title).HasMaxLength(240); e.Property(x => x.Brand).HasMaxLength(120); e.Property(x => x.Description).HasMaxLength(8000); e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20); e.Property(x => x.Version).IsRowVersion();
+            e.Property(x => x.Kind).HasMaxLength(40).HasDefaultValue("general"); e.OwnsMany(x => x.Attributes, a => { a.ToJson("attributes"); a.Property(x => x.Label).HasMaxLength(80); a.Property(x => x.Value).HasMaxLength(200); });
             e.HasIndex(x => x.Slug).IsUnique(); e.HasIndex(x => new { x.CategoryId, x.Status, x.Id }); e.HasIndex(x => x.Title).HasMethod("gin").HasOperators("gin_trgm_ops"); e.HasOne(x => x.Category).WithMany(x => x.Products).HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
         });
         model.Entity<ProductVariant>(e =>

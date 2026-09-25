@@ -790,13 +790,50 @@ public sealed class ShopperJourneyTests
         // Databases seeded by the old round-robin seeder are repaired by FixSeedProductCategories.
         await using (var scope = factory.Services.CreateAsyncScope())
         {
-            var migrator = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>().GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            // Rolling back also removes later schema, so read the category with SQL rather than through the API.
+            async Task<string> HandbookCategory() => await db.Database.SqlQueryRaw<string>(
+                "SELECT c.\"Slug\" AS \"Value\" FROM products p JOIN categories c ON c.\"Id\" = p.\"CategoryId\" WHERE p.\"Title\" = 'Platform Engineering Handbook'").SingleAsync();
             await migrator.MigrateAsync("20260921140928_AddPaymentOrchestration");
-            Assert.Contains("Platform Engineering Handbook", await Titles("electronics"));
+            Assert.Equal("electronics", await HandbookCategory());
             await migrator.MigrateAsync();
+            Assert.Equal("books", await HandbookCategory());
         }
         Assert.Equal(books.Order(), await Titles("books"));
         Assert.Equal(electronics.Append("Reference Studio Headphones").Order(), await Titles("electronics"));
+    }
+
+    [Fact]
+    public async Task Suggestions_match_mid_title_stay_in_scope_and_cards_carry_product_details()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        using var client = factory.CreateClient();
+
+        async Task<string[]> Suggest(string query) => (await client.GetFromJsonAsync<SuggestionDto[]>($"/api/search/suggestions?q={query}"))!.Select(x => x.Value).ToArray();
+
+        Assert.Contains("Noise-Cancelling Headphones", await Suggest("head"));
+        Assert.Contains("Platform Engineering Handbook", await Suggest("hand"));
+        Assert.DoesNotContain("Platform Engineering Handbook", await Suggest("hand&category=electronics"));
+        Assert.Contains("Platform Engineering Handbook", await Suggest("hand&category=books"));
+        Assert.Empty(await Suggest("%25%25")); // "%%" is text to match, not a wildcard for everything
+        Assert.Empty(await Suggest("__"));
+
+        var electronics = await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=electronics&pageSize=100");
+        Assert.Equal(electronics!.TotalCount, electronics.Brands.Sum(x => x.Count));
+        var brand = electronics.Brands[0];
+        var filtered = await client.GetFromJsonAsync<ProductPageDto>($"/api/catalog/products?category=electronics&brand={brand.Value}&pageSize=100");
+        Assert.Equal(brand.Count, filtered!.TotalCount);
+        Assert.Equal(electronics.Brands.Select(x => x.Value), filtered.Brands.Select(x => x.Value)); // the chosen brand keeps its alternatives visible
+
+        var headphones = Assert.Single(electronics.Items, x => x.Title == "Noise-Cancelling Headphones");
+        Assert.Equal("headphones", headphones.Kind);
+        Assert.Equal([new SpecDto("Type", "Over-ear"), new SpecDto("Noise cancelling", "Adaptive ANC"), new SpecDto("Battery", "30 hours")], headphones.Highlights);
+        var book = (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/platform-engineering-handbook"))!.Product;
+        Assert.Equal(("book", "books"), (book.Kind, book.CategorySlug));
+        Assert.Contains(new SpecDto("ISBN", "979-8-88888-001-4"), book.Specifications);
     }
 
     private static void AddProduct(Commerce.Infrastructure.CommerceDbContext db, Commerce.Domain.Category category, string title)

@@ -16,6 +16,8 @@ const reference: ProductCardModel = {
   reviewCount: 384,
   availabilityHint: "in_stock",
   badges: ["featured"],
+  kind: "headphones",
+  highlights: [{ label: "Type", value: "Over-ear" }, { label: "Noise cancelling", value: "Adaptive ANC" }, { label: "Battery", value: "30 hours" }],
 };
 
 const typeRoles = [

@@ -38,12 +38,17 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
                 var scope = CategoryScope(await GetCategoriesAsync(cancellationToken), request.Category);
                 query = query.Where(p => scope.Contains(p.CategoryId));
             }
-            if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
             if (request.MinPrice is not null || request.MaxPrice is not null)
                 query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory != null &&
                     (request.MinPrice == null || v.Price >= request.MinPrice) && (request.MaxPrice == null || v.Price <= request.MaxPrice)));
             if (request.MinimumRating is not null) query = query.Where(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) >= request.MinimumRating);
             if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0));
+
+            // Brand counts ignore the brand filter itself, so choosing one brand still shows the alternatives.
+            var brandRows = await query.GroupBy(p => p.Brand).Select(g => new { Value = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count).ThenBy(x => x.Value).Take(20).ToListAsync(cancellationToken);
+            var brands = brandRows.Select(x => new FacetValueDto(x.Value, x.Count)).ToList();
+            if (!string.IsNullOrWhiteSpace(request.Brand)) query = query.Where(p => p.Brand == request.Brand);
 
             query = request.Sort?.ToLowerInvariant() switch
             {
@@ -57,7 +62,7 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
             var total = await query.CountAsync(cancellationToken);
             var rows = await ProjectCards(query.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize)).ToListAsync(cancellationToken);
             activity?.SetTag("commerce.search.results", total);
-            return new ProductPageDto(rows.Select(MapCard).ToList(), request.Page, request.PageSize, total, (int)Math.Ceiling((double)total / request.PageSize));
+            return new ProductPageDto(rows.Select(MapCard).ToList(), request.Page, request.PageSize, total, (int)Math.Ceiling((double)total / request.PageSize), brands);
         }
         catch (Exception exception)
         {
@@ -71,22 +76,32 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         }
     }
 
-    public async Task<IReadOnlyList<SuggestionDto>> SuggestAsync(string query, CancellationToken cancellationToken)
+    /// <summary>Matches anywhere in the name ("head" finds "Noise-Cancelling Headphones"), names starting with the term first.
+    /// With a category, only that category's subtree is suggested, so a scoped search never silently escapes it.</summary>
+    public async Task<IReadOnlyList<SuggestionDto>> SuggestAsync(string query, string? category, CancellationToken cancellationToken)
     {
         query = query.Trim();
         if (query.Length < 2) return [];
         if (query.Length > 80) throw CommerceErrors.Validation("The suggestion query cannot exceed 80 characters.");
+        category = string.IsNullOrWhiteSpace(category) ? null : category.Trim().ToLowerInvariant();
         return await cache.GetOrCreateAsync(
-            $"suggest:v1:{query.ToLowerInvariant()}",
+            $"suggest:v2:{category}:{query.ToLowerInvariant()}",
             async token =>
             {
                 var normalized = query.ToLower();
-                var products = await db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Title.ToLower().StartsWith(normalized))
-                    .OrderByDescending(p => p.IsFeatured).ThenBy(p => p.Title).Take(8)
+                var products = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active && p.Title.ToLower().Contains(normalized));
+                var categories = db.Categories.AsNoTracking().Where(c => c.Name.ToLower().Contains(normalized));
+                if (category is not null)
+                {
+                    var scope = CategoryScope(await GetCategoriesAsync(token), category);
+                    products = products.Where(p => scope.Contains(p.CategoryId));
+                    categories = categories.Where(c => scope.Contains(c.Id));
+                }
+                var productRows = await products.OrderByDescending(p => p.Title.ToLower().StartsWith(normalized)).ThenByDescending(p => p.IsFeatured).ThenBy(p => p.Title).Take(8)
                     .Select(p => new SuggestionDto("product", p.Title, p.Slug)).ToListAsync(token);
-                var categories = await db.Categories.AsNoTracking().Where(c => c.Name.ToLower().StartsWith(normalized))
-                    .OrderBy(c => c.Name).Take(4).Select(c => new SuggestionDto("category", c.Name, c.Slug)).ToListAsync(token);
-                return products.Concat(categories).Take(10).ToList();
+                var categoryRows = await categories.OrderByDescending(c => c.Name.ToLower().StartsWith(normalized)).ThenBy(c => c.Name).Take(4)
+                    .Select(c => new SuggestionDto("category", c.Name, c.Slug)).ToListAsync(token);
+                return productRows.Concat(categoryRows).Take(10).ToList();
             }, TimeSpan.FromMinutes(1), ["search-suggestions"], cancellationToken);
     }
 
@@ -137,12 +152,15 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
                 p.Brand,
                 p.Description,
                 Category = p.Category.Name,
+                CategorySlug = p.Category.Slug,
+                p.Kind,
+                p.Attributes,
                 Variants = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).Select(v => new VariantDto(v.Id, v.Sku, v.Name, new MoneyDto(v.Price, v.Currency), v.ListPrice == null ? null : new MoneyDto(v.ListPrice.Value, v.Currency), v.Inventory.QuantityOnHand > 10 ? "in_stock" : v.Inventory.QuantityOnHand > 0 ? "low_stock" : "out_of_stock")).ToList(),
                 Assets = p.Assets.OrderBy(a => a.SortOrder).Select(a => new AssetDto(a.Id, a.Type.ToString(), a.Url, a.MimeType, a.Width, a.Height, a.SizeBytes, a.Integrity, a.SortOrder)).ToList(),
                 Rating = p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0,
                 ReviewCount = p.Reviews.Count(r => r.IsApproved)
             }).SingleOrDefaultAsync(token);
-        return product is null ? null : new ProductDetailDto(product.Id, product.Slug, product.Title, product.Brand, product.Description, product.Category, product.Variants, product.Assets, decimal.Round(product.Rating, 1), product.ReviewCount);
+        return product is null ? null : new ProductDetailDto(product.Id, product.Slug, product.Title, product.Brand, product.Description, product.Category, product.Variants, product.Assets, decimal.Round(product.Rating, 1), product.ReviewCount, product.CategorySlug, product.Kind, product.Attributes.Select(a => new SpecDto(a.Label, a.Value)).ToList());
     }
 
     private static IQueryable<CardRow> ProjectCards(IQueryable<Product> query) => query.Select(p => new CardRow(
@@ -152,9 +170,13 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.ListPrice).First(),
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Currency).First(),
         p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0,
-        p.Reviews.Count(r => r.IsApproved), p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0), p.IsFeatured));
+        p.Reviews.Count(r => r.IsApproved), p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0), p.IsFeatured, p.Kind, p.Attributes));
 
-    private static ProductCardDto MapCard(CardRow x) => new(x.Id, x.DefaultVariantId, x.Slug, x.Title, x.Brand, x.Image, new MoneyDto(x.Price, x.Currency), x.ListPrice is null ? null : new MoneyDto(x.ListPrice.Value, x.Currency), decimal.Round(x.Rating, 1), x.ReviewCount, x.Available ? "in_stock" : "out_of_stock", x.Featured ? ["featured"] : []);
+    private static ProductCardDto MapCard(CardRow x) => new(x.Id, x.DefaultVariantId, x.Slug, x.Title, x.Brand, x.Image, new MoneyDto(x.Price, x.Currency), x.ListPrice is null ? null : new MoneyDto(x.ListPrice.Value, x.Currency), decimal.Round(x.Rating, 1), x.ReviewCount, x.Available ? "in_stock" : "out_of_stock", x.Featured ? ["featured"] : [], x.Kind, Highlights(x.Attributes));
+
+    /// <summary>The attributes a card shows: those flagged as highlights, in catalog order, at most three.</summary>
+    public static IReadOnlyList<SpecDto> Highlights(IEnumerable<ProductAttribute> attributes) =>
+        attributes.Where(a => a.Highlight && !string.IsNullOrWhiteSpace(a.Value)).Take(3).Select(a => new SpecDto(a.Label, a.Value)).ToList();
 
     private static void ValidateSearch(SearchRequest request)
     {
@@ -164,5 +186,5 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
         if (request.MinimumRating is < 0 or > 5) throw CommerceErrors.Validation("Minimum rating must be between 0 and 5.");
     }
 
-    private sealed record CardRow(Guid Id, Guid DefaultVariantId, string Slug, string Title, string Brand, ImageDto? Image, decimal Price, decimal? ListPrice, string Currency, decimal Rating, int ReviewCount, bool Available, bool Featured);
+    private sealed record CardRow(Guid Id, Guid DefaultVariantId, string Slug, string Title, string Brand, ImageDto? Image, decimal Price, decimal? ListPrice, string Currency, decimal Rating, int ReviewCount, bool Available, bool Featured, string Kind, List<ProductAttribute> Attributes);
 }

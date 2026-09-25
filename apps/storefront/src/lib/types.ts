@@ -1,6 +1,8 @@
 export type Money = { amount: number; currency: string };
 export type ImageAsset = { url: string; mimeType: string; width: number | null; height: number | null };
 
+export type Spec = { label: string; value: string };
+
 export type ProductCardModel = {
   id: string;
   defaultVariantId: string;
@@ -14,6 +16,9 @@ export type ProductCardModel = {
   reviewCount: number;
   availabilityHint: "in_stock" | "low_stock" | "out_of_stock";
   badges: string[];
+  /** Presentation family, e.g. "book"; changes layout only. */
+  kind: string;
+  highlights: Spec[];
 };
 
 export type Category = { id: string; slug: string; name: string; parentId: string | null };
@@ -27,9 +32,10 @@ export type HomeModel = {
 
 export type Variant = { id: string; sku: string; name: string; price: Money; listPrice: Money | null; availabilityHint: string };
 export type ProductAsset = { id: string; type: string; url: string; mimeType: string; width: number | null; height: number | null; sizeBytes: number | null; integrity: string | null; sortOrder: number };
-export type ProductDetail = { id: string; slug: string; title: string; brand: string; description: string; category: string; variants: Variant[]; assets: ProductAsset[]; rating: number; reviewCount: number };
+export type ProductDetail = { id: string; slug: string; title: string; brand: string; description: string; category: string; categorySlug: string; kind: string; specifications: Spec[]; variants: Variant[]; assets: ProductAsset[]; rating: number; reviewCount: number };
 export type StorefrontProduct = { product: ProductDetail; recommendations: ProductCardModel[]; isDegraded: boolean };
-export type ProductPage = { items: ProductCardModel[]; page: number; pageSize: number; totalCount: number; totalPages: number };
+export type FacetValue = { value: string; count: number };
+export type ProductPage = { items: ProductCardModel[]; page: number; pageSize: number; totalCount: number; totalPages: number; brands: FacetValue[] };
 export type Suggestion = { type: "product" | "category"; value: string; slug: string | null };
 
 export type CartItem = { variantId: string; productId: string; slug: string; title: string; variant: string; image: ImageAsset | null; quantity: number; unitPrice: Money; lineTotal: Money; availabilityHint: string };

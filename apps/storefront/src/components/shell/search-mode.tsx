@@ -1,18 +1,19 @@
 "use client";
 
 import { type KeyboardEvent, type MouseEvent, startTransition, useEffect, useRef, useState } from "react";
-import { ArrowIcon, ClockIcon, CloseIcon, SearchIcon } from "@/components/icons";
+import { ArrowIcon, CheckIcon, ClockIcon, CloseIcon, SearchIcon } from "@/components/icons";
 import { useLocalizedRouter, useT } from "@/components/providers/locale-provider";
 import { CATALOG_LANG } from "@/i18n/config";
 import { format } from "@/i18n/dictionary";
 import { browserRequest } from "@/lib/api";
+import { categoryPath } from "@/lib/categories";
 import { clearRecentSearches, readRecentSearches, rememberSearch } from "@/lib/recent-searches";
 import type { Category, Suggestion } from "@/lib/types";
 import { useSearchMode } from "@/store/search-store";
+import { useCategoryScope } from "@/components/shell/site-header";
 
 type Option = { id: string; label: string; hint?: string; group: string; href: string; term?: string; lang?: string };
 
-const categoryHref = (slug: string) => `/search?category=${encodeURIComponent(slug)}`;
 const queryHref = (term: string) => `/search?q=${encodeURIComponent(term)}`;
 
 /** Search as an interaction mode: the page recedes, the field takes focus, and results arrive in place. */
@@ -60,30 +61,38 @@ function SearchPanel({ categories, close }: { categories: Category[]; close: () 
   const [results, setResults] = useState<{ term: string; items: Suggestion[]; failed: boolean } | null>(null);
   const [active, setActive] = useState(-1);
   const [recent, setRecent] = useState(readRecentSearches);
+  const scopeCategory = useCategoryScope(categories);
+  const [scoped, setScoped] = useState(true);
+  const scope = scoped ? scopeCategory : undefined;
 
   const term = query.trim();
+  // Results are keyed by scope and term together, so a late response never shows under the wrong scope.
+  const key = `${scope?.slug ?? ""}|${term}`;
   useEffect(() => {
     if (term.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      browserRequest<Suggestion[]>(`/api/public/search/suggestions?q=${encodeURIComponent(term)}`, { signal: controller.signal })
-        .then((items) => setResults({ term, items, failed: false }))
-        .catch(() => { if (!controller.signal.aborted) setResults({ term, items: [], failed: true }); });
+      browserRequest<Suggestion[]>(`/api/public/search/suggestions?q=${encodeURIComponent(term)}${scope ? `&category=${scope.slug}` : ""}`, { signal: controller.signal })
+        .then((items) => setResults({ term: key, items, failed: false }))
+        .catch(() => { if (!controller.signal.aborted) setResults({ term: key, items: [], failed: true }); });
     }, 140);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [term]);
+  }, [term, key, scope]);
 
   const typing = term.length >= 2;
-  const current = typing && results?.term === term ? results : null;
+  const current = typing && results?.term === key ? results : null;
+  const submitHref = (value: string) => (scope ? `${categoryPath(scope.slug)}?q=${encodeURIComponent(value)}` : queryHref(value));
   const options: Option[] = typing
     ? [
         ...(current?.items.filter((x) => x.type === "product" && x.slug).map((x) => ({ id: `p-${x.slug}`, label: x.value, lang: CATALOG_LANG, group: t.search.products, href: `/products/${x.slug}`, term })) ?? []),
-        ...(current?.items.filter((x) => x.type === "category" && x.slug).map((x) => ({ id: `c-${x.slug}`, label: x.value, lang: CATALOG_LANG, hint: t.search.browseHint, group: t.search.spaces, href: categoryHref(x.slug!) })) ?? []),
-        { id: "all", label: format(t.search.seeAll, { query: term }), group: "all", href: queryHref(term), term },
+        ...(current?.items.filter((x) => x.type === "category" && x.slug).map((x) => ({ id: `c-${x.slug}`, label: x.value, lang: CATALOG_LANG, hint: t.search.browseHint, group: t.search.spaces, href: categoryPath(x.slug!) })) ?? []),
+        ...(scope
+          ? [{ id: "all", label: format(t.category.seeAllIn, { category: scope.name }), group: "all", href: submitHref(term), term }, { id: "everywhere", label: format(t.category.searchAllFor, { query: term }), group: "all", href: queryHref(term), term }]
+          : [{ id: "all", label: format(t.search.seeAll, { query: term }), group: "all", href: queryHref(term), term }]),
       ]
     : [
         ...recent.map((x, index) => ({ id: `r-${index}`, label: x, group: t.search.recent, href: queryHref(x), term: x })),
-        ...categories.filter((x) => !x.parentId).map((x) => ({ id: `c-${x.slug}`, label: x.name, lang: CATALOG_LANG, hint: t.search.browseHint, group: t.search.browse, href: categoryHref(x.slug) })),
+        ...categories.filter((x) => !x.parentId).map((x) => ({ id: `c-${x.slug}`, label: x.name, lang: CATALOG_LANG, hint: t.search.browseHint, group: t.search.browse, href: categoryPath(x.slug) })),
       ];
   const groups = [...new Set(options.map((x) => x.group))];
 
@@ -100,13 +109,14 @@ function SearchPanel({ categories, close }: { categories: Category[]; close: () 
       event.preventDefault();
       const chosen = options[active];
       if (chosen) go(chosen);
-      else if (term) go({ href: queryHref(term), term });
+      else if (term) go({ href: submitHref(term), term });
     }
   }
 
   const status = typing && !current ? t.search.loading
     : current?.failed ? t.search.unavailable
-    : current && current.items.length === 0 ? `${format(t.search.empty, { query: term })} ${t.search.emptyHint}` : "";
+    : current && current.items.length === 0 ? (scope ? format(t.category.noResultsIn, { category: scope.name, query: term }) : `${format(t.search.empty, { query: term })} ${t.search.emptyHint}`) : "";
+  const placeholder = scope ? format(t.category.searchIn, { category: scope.name }) : t.search.placeholder;
 
   return (
     <div className="search-mode__panel">
@@ -114,20 +124,27 @@ function SearchPanel({ categories, close }: { categories: Category[]; close: () 
         <SearchIcon />
         <input
           role="combobox"
-          aria-label={t.search.placeholder}
+          aria-label={placeholder}
           aria-expanded={options.length > 0}
           aria-controls="search-mode-options"
           aria-autocomplete="list"
           aria-activedescendant={options[active] ? `search-option-${options[active].id}` : undefined}
           autoComplete="off"
           enterKeyHint="search"
-          placeholder={t.search.placeholder}
+          placeholder={placeholder}
           value={query}
           onChange={(event) => { setQuery(event.target.value); setActive(-1); }}
           onKeyDown={onKeyDown}
         />
         <button type="button" className="icon-button" onClick={close} aria-label={t.search.close}><CloseIcon /></button>
       </div>
+      {scopeCategory ? (
+        <button type="button" className="search-mode__scope" aria-pressed={scoped} onClick={() => { setScoped((x) => !x); setActive(-1); }}>
+          {scoped ? <CheckIcon width={16} height={16} /> : null}
+          <span lang={CATALOG_LANG} dir="auto">{format(t.category.within, { category: scopeCategory.name })}</span>
+          {scoped ? <span className="sr-only">. {t.category.removeScope}</span> : null}
+        </button>
+      ) : null}
 
       <div id="search-mode-options" role="listbox" aria-label={t.search.suggestions} className="search-mode__results">
         {groups.map((group) => (
