@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckIcon, HeartIcon, StarIcon } from "@/components/icons";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Link, useIntlLocale, useT } from "@/components/providers/locale-provider";
@@ -10,6 +10,7 @@ import { ProductVisual } from "@/components/ui/product-visual";
 import { CATALOG_LANG } from "@/i18n/config";
 import { format, plural } from "@/i18n/dictionary";
 import { formatMoney } from "@/lib/api";
+import { recordViewed } from "@/lib/recently-viewed";
 import { splitDescription } from "@/lib/specs";
 import type { StorefrontProduct } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
@@ -31,6 +32,7 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
   const unavailable = !selected || selected.availabilityHint === "out_of_stock";
   const isBook = product.kind === "book";
   const { lead, more } = splitDescription(product.description);
+  useEffect(() => { recordViewed(product.id); }, [product.id]);
   const saving = selected?.listPrice && selected.listPrice.amount > selected.price.amount ? { amount: selected.listPrice.amount - selected.price.amount, currency: selected.price.currency } : null;
 
   async function addSelected() {

@@ -24,6 +24,10 @@ Products carry a `kind` (presentation only, e.g. `book` renders a cover) and ord
 
 Counted strings ("3 items", Russian "2 товара", Arabic dual forms) are plural-form objects in the dictionaries and are rendered with `plural()`, which uses `Intl.PluralRules`; never build them with `format()`.
 
+## Homepage
+
+A minimal hero (display heading and one large search field that opens search mode), top-level categories as large tiles, then at most three rails of four products from real data (featured, newest, top rated) with no product repeated across rails, and a device-local "Recently explored" rail when history exists. Optional rails fail quietly so a slow query never breaks the page. There is no 3D or scroll-driven animation; `three`, React Three Fiber and `gsap` were removed.
+
 ## Product page, checkout and confirmation
 
 The product page's first viewport holds only what a purchase decision needs: name, one-line proposition, rating, price and saving, options, availability, Add to bag / Save, and the store's delivery, returns and support promises. Details, specifications and delivery follow below; further products are labelled "More in {category}" because they are same-category, not relationship-based. Checkout swaps the header for a minimal one (wordmark, "Secure checkout", back to store) and hides the bottom nav: no search, categories or recommendations compete with the order. The confirmation leads with reassurance and next steps and shows no products for sale.

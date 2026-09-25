@@ -42,7 +42,8 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
                 query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory != null &&
                     (request.MinPrice == null || v.Price >= request.MinPrice) && (request.MaxPrice == null || v.Price <= request.MaxPrice)));
             if (request.MinimumRating is not null) query = query.Where(p => p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) >= request.MinimumRating);
-            if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0));
+            var sellable = SellableStock.Query(db);
+            if (request.Available == true) query = query.Where(p => p.Variants.Any(v => v.IsActive && sellable.Any(s => s.VariantId == v.Id && s.Units > 0)));
 
             // Brand counts ignore the brand filter itself, so choosing one brand still shows the alternatives.
             var brandRows = await query.GroupBy(p => p.Brand).Select(g => new { Value = g.Key, Count = g.Count() })
@@ -143,6 +144,7 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
 
     private async Task<ProductDetailDto?> LoadProductAsync(string slug, CancellationToken token)
     {
+        var sellable = SellableStock.Query(db);
         var product = await db.Products.AsNoTracking().Where(p => p.Slug == slug && p.Status == ProductStatus.Active)
             .Select(p => new
             {
@@ -155,24 +157,31 @@ public sealed class CatalogService(ICommerceDbContext db, IReadModelCache cache)
                 CategorySlug = p.Category.Slug,
                 p.Kind,
                 p.Attributes,
-                Variants = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).Select(v => new VariantDto(v.Id, v.Sku, v.Name, new MoneyDto(v.Price, v.Currency), v.ListPrice == null ? null : new MoneyDto(v.ListPrice.Value, v.Currency), v.Inventory.QuantityOnHand > 10 ? "in_stock" : v.Inventory.QuantityOnHand > 0 ? "low_stock" : "out_of_stock")).ToList(),
+                Variants = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Name).Select(v => new { v.Id, v.Sku, v.Name, v.Price, v.ListPrice, v.Currency, Units = sellable.Where(s => s.VariantId == v.Id).Select(s => s.Units).FirstOrDefault() }).ToList(),
                 Assets = p.Assets.OrderBy(a => a.SortOrder).Select(a => new AssetDto(a.Id, a.Type.ToString(), a.Url, a.MimeType, a.Width, a.Height, a.SizeBytes, a.Integrity, a.SortOrder)).ToList(),
                 Rating = p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0,
                 ReviewCount = p.Reviews.Count(r => r.IsApproved)
             }).SingleOrDefaultAsync(token);
-        return product is null ? null : new ProductDetailDto(product.Id, product.Slug, product.Title, product.Brand, product.Description, product.Category, product.Variants, product.Assets, decimal.Round(product.Rating, 1), product.ReviewCount, product.CategorySlug, product.Kind, product.Attributes.Select(a => new SpecDto(a.Label, a.Value)).ToList());
+        return product is null ? null : new ProductDetailDto(product.Id, product.Slug, product.Title, product.Brand, product.Description, product.Category,
+            product.Variants.Select(v => new VariantDto(v.Id, v.Sku, v.Name, new MoneyDto(v.Price, v.Currency), v.ListPrice == null ? null : new MoneyDto(v.ListPrice.Value, v.Currency), AvailabilityHint(v.Units))).ToList(), product.Assets, decimal.Round(product.Rating, 1), product.ReviewCount, product.CategorySlug, product.Kind, product.Attributes.Select(a => new SpecDto(a.Label, a.Value)).ToList());
     }
 
-    private static IQueryable<CardRow> ProjectCards(IQueryable<Product> query) => query.Select(p => new CardRow(
+    private IQueryable<CardRow> ProjectCards(IQueryable<Product> query)
+    {
+        var sellable = SellableStock.Query(db);
+        return query.Select(p => new CardRow(
         p.Id, p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Id).First(), p.Slug, p.Title, p.Brand,
         p.Assets.Where(a => a.Type == AssetType.PrimaryImage).OrderBy(a => a.SortOrder).Select(a => new ImageDto(a.Url, a.MimeType, a.Width, a.Height)).FirstOrDefault(),
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Price).First(),
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.ListPrice).First(),
         p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Currency).First(),
         p.Reviews.Where(r => r.IsApproved).Average(r => (decimal?)r.Rating) ?? 0,
-        p.Reviews.Count(r => r.IsApproved), p.Variants.Any(v => v.IsActive && v.Inventory.QuantityOnHand > 0), p.IsFeatured, p.Kind, p.Attributes));
+        p.Reviews.Count(r => r.IsApproved), p.Variants.Any(v => v.IsActive && sellable.Any(s => s.VariantId == v.Id && s.Units > 0)), p.IsFeatured, p.Kind, p.Attributes));
+    }
 
     private static ProductCardDto MapCard(CardRow x) => new(x.Id, x.DefaultVariantId, x.Slug, x.Title, x.Brand, x.Image, new MoneyDto(x.Price, x.Currency), x.ListPrice is null ? null : new MoneyDto(x.ListPrice.Value, x.Currency), decimal.Round(x.Rating, 1), x.ReviewCount, x.Available ? "in_stock" : "out_of_stock", x.Featured ? ["featured"] : [], x.Kind, Highlights(x.Attributes));
+
+    public static string AvailabilityHint(int sellableUnits) => sellableUnits > 10 ? "in_stock" : sellableUnits > 0 ? "low_stock" : "out_of_stock";
 
     /// <summary>The attributes a card shows: those flagged as highlights, in catalog order, at most three.</summary>
     public static IReadOnlyList<SpecDto> Highlights(IEnumerable<ProductAttribute> attributes) =>

@@ -59,6 +59,10 @@ receipt -> idempotency advisory lock -> purchase-order row lock -> inventory row
 
 Cancellation tokens flow from `HttpContext.RequestAborted` through services, EF, and cache. Storefront GET requests are safe and write no analytics or reservation state.
 
+## Sellable stock
+
+Availability shown to shoppers uses one definition, `SellableStock.Query`, which mirrors checkout allocation: when a warehouse stocks the variant, the sum of each warehouse's available-to-sell (on hand less reserved, safety stock and unavailable, never negative), capped by the aggregate on hand; otherwise the aggregate. Product cards, the `available` filter, product-page option availability and the bag's add check all use it, so the storefront never offers stock that checkout would refuse. Checkout itself remains authoritative and re-checks under lock.
+
 ## PostgreSQL index plan
 
 | Table | Indexes |

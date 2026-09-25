@@ -88,8 +88,7 @@
     "rating": {
       "one": "{rating} out of 5 stars from {count} review",
       "other": "{rating} out of 5 stars from {count} reviews"
-    },
-    "editorsPick": "Editor's pick"
+    }
   },
   "saved": {
     "title": "Saved",
@@ -273,5 +272,16 @@
     "statusConfirmed": "Confirmed",
     "statusPlaced": "Placed",
     "statusCancelled": "Cancelled"
+  },
+  "home": {
+    "heroTitle": "Find something worth keeping.",
+    "heroLede": "Considered goods from every corner of the store. Search for anything, or wander a space.",
+    "spaces": "Browse by space",
+    "explore": "Explore {category}",
+    "featured": "Editor's picks",
+    "newest": "New arrivals",
+    "rated": "Highly rated",
+    "recent": "Recently explored",
+    "seeAll": "See all"
   }
 }

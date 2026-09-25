@@ -22,8 +22,9 @@ public sealed class CartService(ICommerceDbContext db, TimeProvider clock)
     public async Task<CartMutationDto> SetItemAsync(string customerId, SetCartItemRequest request, CancellationToken cancellationToken)
     {
         if (request.Quantity is < 1 or > 99) throw CommerceErrors.Validation("Quantity must be between 1 and 99.");
+        var sellable = SellableStock.Query(db);
         var variant = await db.ProductVariants.AsNoTracking().Where(v => v.Id == request.VariantId && v.IsActive && v.Product.Status == ProductStatus.Active)
-            .Select(v => new { v.Id, v.Currency, Available = v.Inventory.QuantityOnHand }).SingleOrDefaultAsync(cancellationToken)
+            .Select(v => new { v.Id, v.Currency, Available = sellable.Where(s => s.VariantId == v.Id).Select(s => s.Units).FirstOrDefault() }).SingleOrDefaultAsync(cancellationToken)
             ?? throw CommerceErrors.NotFound("Variant");
         if (variant.Available < request.Quantity) throw CommerceErrors.Conflict("insufficient_inventory", "The requested quantity is not currently available.");
 
@@ -95,10 +96,14 @@ public sealed class CartService(ICommerceDbContext db, TimeProvider clock)
         return await db.Carts.Include(c => c.Items).SingleAsync(c => c.Id == cartId.Value, cancellationToken);
     }
 
-    private IQueryable<CartRow> QueryCart(string customerId) => db.Carts.AsNoTracking().Where(c => c.CustomerId == customerId).Select(c => new CartRow(c.Id, c.Version,
+    private IQueryable<CartRow> QueryCart(string customerId)
+    {
+        var sellable = SellableStock.Query(db);
+        return db.Carts.AsNoTracking().Where(c => c.CustomerId == customerId).Select(c => new CartRow(c.Id, c.Version,
         c.Items.OrderBy(i => i.AddedAt).Select(i => new CartLineRow(i.VariantId, i.Variant.ProductId, i.Variant.Product.Slug, i.Variant.Product.Title, i.Variant.Name,
             i.Variant.Product.Assets.Where(a => a.Type == AssetType.PrimaryImage).OrderBy(a => a.SortOrder).Select(a => new ImageDto(a.Url, a.MimeType, a.Width, a.Height)).FirstOrDefault(),
-            i.Quantity, i.Variant.Price, i.Variant.Currency, i.Variant.Inventory.QuantityOnHand)).ToList()));
+            i.Quantity, i.Variant.Price, i.Variant.Currency, sellable.Where(s => s.VariantId == i.VariantId).Select(s => s.Units).FirstOrDefault())).ToList()));
+    }
 
     private static CartDto Map(CartRow row)
     {

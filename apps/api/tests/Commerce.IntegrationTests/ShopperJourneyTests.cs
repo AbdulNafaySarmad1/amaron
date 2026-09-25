@@ -836,6 +836,48 @@ public sealed class ShopperJourneyTests
         Assert.Contains(new SpecDto("ISBN", "979-8-88888-001-4"), book.Specifications);
     }
 
+    [Fact]
+    public async Task Storefront_offers_only_stock_that_checkout_can_allocate()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+        await postgres.StartAsync();
+        await using var factory = CreateFactory(postgres.GetConnectionString(), cacheEnabled: false);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Customer-Id", "stock-shopper");
+        await client.GetAsync("/api/catalog/categories"); // start the host so seeding has run
+
+        // Only safety stock left: checkout would refuse it, so the storefront must not offer it.
+        Guid keyboardVariant;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Commerce.Infrastructure.CommerceDbContext>();
+            keyboardVariant = await db.ProductVariants.Where(v => v.Product.Slug == "mechanical-keyboard").Select(v => v.Id).SingleAsync();
+            var stock = await db.WarehouseStocks.SingleAsync(x => x.VariantId == keyboardVariant);
+            stock.SafetyStock = stock.OnHand;
+            var aggregate = await db.Inventory.SingleAsync(x => x.VariantId == keyboardVariant);
+            Assert.True(aggregate.QuantityOnHand > 0); // the old rule would have called this in stock
+            db.Categories.Add(new Commerce.Domain.Category { Id = Guid.NewGuid(), Slug = "unstocked", Name = "Unstocked" });
+            await db.SaveChangesAsync();
+            var unstocked = await db.Categories.SingleAsync(x => x.Slug == "unstocked");
+            AddProduct(db, unstocked, "Warehouse-Free Item"); // no warehouse rows: the aggregate applies
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<IReadModelCache>().RemoveByTagAsync("categories", CancellationToken.None);
+        }
+
+        var electronics = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=electronics&pageSize=100"))!;
+        Assert.Equal("out_of_stock", Assert.Single(electronics.Items, x => x.Title == "Mechanical Keyboard").AvailabilityHint);
+        var inStockOnly = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=electronics&available=true&pageSize=100"))!;
+        Assert.DoesNotContain(inStockOnly.Items, x => x.Title == "Mechanical Keyboard");
+        Assert.Equal(electronics.TotalCount - 1, inStockOnly.TotalCount);
+        var detail = (await client.GetFromJsonAsync<StorefrontProductDto>("/api/storefront/products/mechanical-keyboard"))!.Product;
+        Assert.Equal("out_of_stock", Assert.Single(detail.Variants).AvailabilityHint);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PutAsJsonAsync("/api/cart/items", new SetCartItemRequest(keyboardVariant, 1))).StatusCode);
+
+        var fallback = (await client.GetFromJsonAsync<ProductPageDto>("/api/catalog/products?category=unstocked"))!;
+        Assert.Equal("in_stock", Assert.Single(fallback.Items).AvailabilityHint);
+        Assert.Equal("low_stock", CatalogService.AvailabilityHint(5));
+    }
+
     private static void AddProduct(Commerce.Infrastructure.CommerceDbContext db, Commerce.Domain.Category category, string title)
     {
         var now = DateTimeOffset.UtcNow;

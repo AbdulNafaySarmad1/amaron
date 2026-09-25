@@ -51,7 +51,6 @@ export function ProductCard({ product, onAdd, priority = false }: { product: Pro
         <button className="product-card__save" type="button" aria-label={format(saved ? t.product.unsave : t.product.save, { title: product.title })} aria-pressed={saved} onClick={() => toggleSaved(product.id)}>
           <HeartIcon fill={saved ? "currentColor" : "none"} />
         </button>
-        {product.badges.includes("featured") ? <span className="product-card__badge">{t.product.editorsPick}</span> : null}
       </div>
 
       <div className="product-card__body">
@@ -72,7 +71,8 @@ export function ProductCard({ product, onAdd, priority = false }: { product: Pro
           </p>
           <Button variant="secondary" size="small" className="product-card__cta" busy={addState === "loading"} disabled={unavailable || !onAdd} onClick={addToCart}>{label}</Button>
         </div>
-        {product.availabilityHint === "in_stock" ? null : <p className={`product-card__availability product-card__availability--${product.availabilityHint}`}>{t.availability[product.availabilityHint]}</p>}
+        {/* Out of stock is already said by the disabled button; only "limited" needs its own line. */}
+        {product.availabilityHint === "low_stock" ? <p className="product-card__availability product-card__availability--low_stock">{t.availability.low_stock}</p> : null}
       </div>
     </article>
   );

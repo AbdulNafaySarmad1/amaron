@@ -104,8 +104,7 @@
       "few": "{rating} من 5 نجوم من {count} مراجعات",
       "many": "{rating} من 5 نجوم من {count} مراجعة",
       "other": "{rating} من 5 نجوم من {count} مراجعة"
-    },
-    "editorsPick": "اختيار المحرر"
+    }
   },
   "saved": {
     "title": "المحفوظات",
@@ -305,5 +304,16 @@
     "statusConfirmed": "مؤكد",
     "statusPlaced": "تم الطلب",
     "statusCancelled": "ملغى"
+  },
+  "home": {
+    "heroTitle": "اعثر على ما يستحق الاقتناء.",
+    "heroLede": "منتجات مختارة بعناية من كل أقسام المتجر. ابحث عن أي شيء، أو تجوّل في قسم.",
+    "spaces": "تصفّح حسب القسم",
+    "explore": "استكشف {category}",
+    "featured": "اختيارات المحرر",
+    "newest": "وصل حديثًا",
+    "rated": "الأعلى تقييمًا",
+    "recent": "شاهدتها مؤخرًا",
+    "seeAll": "عرض الكل"
   }
 }
