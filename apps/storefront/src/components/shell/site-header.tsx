@@ -1,93 +1,100 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "motion/react";
-import { FormEvent, KeyboardEvent, startTransition, useDeferredValue, useEffect, useState } from "react";
-import { CartIcon, SearchIcon } from "@/components/icons";
+import { usePathname } from "next/navigation";
+import { BagIcon, ChevronIcon, HeartIcon, SearchIcon, UserIcon } from "@/components/icons";
 import { useStorefrontSession } from "@/components/providers/storefront-provider";
 import { commerceCopy } from "@/content/commerce";
 import { browserRequest } from "@/lib/api";
-import { motionTokens } from "@/lib/motion";
-import type { Category, Suggestion } from "@/lib/types";
+import type { Category } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
+import { useSavedStore } from "@/store/saved-store";
+import { useSearchMode } from "@/store/search-store";
+
+const categoryHref = (slug: string) => `/search?category=${encodeURIComponent(slug)}`;
+
+function hidePopover(id: string) {
+  document.getElementById(id)?.hidePopover();
+}
 
 export function SiteHeader({ categories }: { categories: Category[] }) {
-  const router = useRouter();
+  const pathname = usePathname();
   const session = useStorefrontSession();
-  const openCart = useCartStore((state) => state.open);
-  const cartCount = useCartStore((state) => state.cart?.totalQuantity ?? 0);
-  const [query, setQuery] = useState("");
-  const deferredQuery = useDeferredValue(query);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [active, setActive] = useState(-1);
-  const [focused, setFocused] = useState(false);
+  const openSearch = useSearchMode((state) => state.open);
+  const savedCount = useSavedStore((state) => state.ids.length);
+  const roots = categories.filter((category) => !category.parentId);
 
-  useEffect(() => {
-    if (deferredQuery.trim().length < 2) return;
-    const controller = new AbortController();
-    browserRequest<Suggestion[]>(`/api/public/search/suggestions?q=${encodeURIComponent(deferredQuery.trim())}`, { signal: controller.signal })
-      .then(setSuggestions)
-      .catch((error) => { if (error instanceof DOMException && error.name === "AbortError") return; setSuggestions([]); });
-    return () => controller.abort();
-  }, [deferredQuery]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const clean = query.trim();
-    if (!clean) return;
-    setFocused(false);
-    startTransition(() => router.push(`/search?q=${encodeURIComponent(clean)}`));
-  }
-
-  function choose(suggestion: Suggestion) {
-    setQuery(suggestion.value);
-    setFocused(false);
-    startTransition(() => router.push(suggestion.type === "product" && suggestion.slug ? `/products/${suggestion.slug}` : `/search?category=${suggestion.slug ?? ""}`));
-  }
-
-  function navigateSuggestions(event: KeyboardEvent<HTMLInputElement>) {
-    if (!suggestions.length) return;
-    if (event.key === "ArrowDown") { event.preventDefault(); setActive((value) => (value + 1) % suggestions.length); }
-    if (event.key === "ArrowUp") { event.preventDefault(); setActive((value) => value <= 0 ? suggestions.length - 1 : value - 1); }
-    if (event.key === "Enter" && active >= 0) { event.preventDefault(); choose(suggestions[active]!); }
-    if (event.key === "Escape") setFocused(false);
-  }
-
-  const showSuggestions = focused && query.length >= 2;
   async function logout() {
     const result = await browserRequest<{ logoutUrl: string }>("/api/auth/logout", { method: "POST" });
     window.location.assign(result.logoutUrl);
   }
+
   return (
     <header className="site-header">
       <div className="site-header__inner">
         <Link className="wordmark" href="/" aria-label="Amaron home"><span>A</span>maron</Link>
-        <nav className="primary-nav" aria-label="Primary navigation">
-          {categories.slice(0, 4).map((category) => <Link key={category.id} href={`/search?category=${category.slug}`}>{category.name}</Link>)}
-          <Link href="/search">All goods</Link>
-          {session.authenticated ? <Link href="/orders">Orders</Link> : null}
+
+        <nav className="primary-nav" aria-label="Primary">
+          <Link href="/search" aria-current={pathname === "/search" ? "page" : undefined}>Discover</Link>
+          <button type="button" className="primary-nav__menu" popoverTarget="category-panel">Categories <ChevronIcon width={16} height={16} /></button>
         </nav>
-        <form className="header-search" role="search" onSubmit={submit}>
+
+        <button type="button" className="search-trigger" onClick={openSearch} aria-haspopup="dialog">
           <SearchIcon />
-          <label className="sr-only" htmlFor="site-search">Search the store</label>
-          <input id="site-search" role="combobox" value={query} onChange={(event) => { setQuery(event.target.value); setActive(-1); if (event.target.value.trim().length < 2) setSuggestions([]); }} onFocus={() => setFocused(true)} onBlur={() => window.setTimeout(() => setFocused(false), 120)} onKeyDown={navigateSuggestions} placeholder={commerceCopy.search.placeholder} autoComplete="off" aria-autocomplete="list" aria-expanded={showSuggestions} aria-controls="search-suggestions" aria-activedescendant={active >= 0 ? `suggestion-${active}` : undefined} />
-          <AnimatePresence>
-            {showSuggestions ? (
-              <motion.div id="search-suggestions" className="search-suggestions" role="listbox" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: motionTokens.duration.quick }}>
-                {suggestions.length ? suggestions.map((suggestion, index) => (
-                  <button id={`suggestion-${index}`} role="option" aria-selected={index === active} type="button" key={`${suggestion.type}-${suggestion.value}`} onMouseDown={() => choose(suggestion)}>
-                    <span>{suggestion.value}</span><small>{suggestion.type}</small>
-                  </button>
-                )) : <p>{commerceCopy.search.loading}</p>}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </form>
-        <div className="header-account">
-          {session.authenticated ? <><span>Hello, {session.user.name ?? "there"}</span><Link className="text-button" href="/api/auth/account">Profile</Link><button className="text-button" type="button" onClick={() => void logout()}>Sign out</button><button className="cart-trigger" type="button" onClick={() => void openCart()} aria-label={`Open cart with ${cartCount} items`}><CartIcon /><span>Cart</span><motion.b key={cartCount} initial={{ scale: 0.72 }} animate={{ scale: 1 }} transition={motionTokens.spring.tactile}>{cartCount}</motion.b></button></> : <Link className="button button--primary button--small" href="/api/auth/login?returnTo=/">Sign in</Link>}
+          <span>{commerceCopy.search.placeholder}</span>
+          <kbd aria-hidden="true">/</kbd>
+        </button>
+
+        <div className="header-actions">
+          <button type="button" className="header-action header-action--search" onClick={openSearch} aria-label={commerceCopy.search.trigger}><SearchIcon /></button>
+          <Link className="header-action header-action--saved" href="/saved" aria-current={pathname === "/saved" ? "page" : undefined} aria-label={`Saved, ${savedCount} items`}>
+            <HeartIcon /><span className="header-action__label">Saved</span>{savedCount ? <b>{savedCount}</b> : null}
+          </Link>
+          {session.authenticated ? (
+            <>
+              <button type="button" className="header-action" popoverTarget="account-panel" aria-label="Account"><UserIcon /><span className="header-action__label">Account</span></button>
+              <div id="account-panel" popover="auto" className="header-popover header-popover--account">
+                <p className="t-meta">Signed in as</p>
+                <p className="t-ui">{session.user.name ?? "Your account"}</p>
+                <Link href="/orders" onClick={() => hidePopover("account-panel")}>Orders</Link>
+                <Link href="/api/auth/account">Profile and security</Link>
+                <button type="button" className="text-button" onClick={() => void logout()}>Sign out</button>
+              </div>
+            </>
+          ) : (
+            <Link className="header-action" href={`/api/auth/login?returnTo=${encodeURIComponent(pathname)}`}><UserIcon /><span className="header-action__label">Sign in</span></Link>
+          )}
+          <BagButton className="header-action header-action--bag" />
         </div>
+      </div>
+
+      <div id="category-panel" popover="auto" className="header-popover header-popover--categories">
+        <p className="t-meta">Shop by space</p>
+        <ul>
+          {roots.map((root) => (
+            <li key={root.id}>
+              <Link className="t-h3" href={categoryHref(root.slug)} onClick={() => hidePopover("category-panel")}>{root.name}</Link>
+              <ul>
+                {categories.filter((child) => child.parentId === root.id).map((child) => (
+                  <li key={child.id}><Link href={categoryHref(child.slug)} onClick={() => hidePopover("category-panel")}>{child.name}</Link></li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
       </div>
     </header>
   );
+}
+
+/** The bag opens the drawer for signed-in shoppers; guests are sent to sign in first because carts are account-bound. */
+export function BagButton({ className }: { className: string }) {
+  const pathname = usePathname();
+  const session = useStorefrontSession();
+  const openCart = useCartStore((state) => state.open);
+  const count = useCartStore((state) => state.cart?.totalQuantity ?? 0);
+  const content = <><BagIcon /><span className="header-action__label">Bag</span>{count ? <b>{count}</b> : null}</>;
+  return session.authenticated
+    ? <button type="button" className={className} onClick={() => void openCart()} aria-label={`Bag, ${count} items`}>{content}</button>
+    : <Link className={className} href={`/api/auth/login?returnTo=${encodeURIComponent(pathname)}`} aria-label="Bag, sign in to use">{content}</Link>;
 }

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Fraunces, Manrope } from "next/font/google";
 import { StorefrontProvider } from "@/components/providers/storefront-provider";
+import { BottomNav } from "@/components/shell/bottom-nav";
+import { SearchMode } from "@/components/shell/search-mode";
 import { SiteHeader } from "@/components/shell/site-header";
 import { serverGet } from "@/lib/api";
 import { publicSession } from "@/lib/auth/session";
@@ -20,5 +22,5 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   try { categories = await serverGet<Category[]>("/api/catalog/categories", 300); } catch { /* Navigation still works through All goods. */ }
   const storedSession = await publicSession();
   const session: AuthSession = storedSession ?? { authenticated: false };
-  return <html lang="en" className={`${body.variable} ${display.variable}`}><body><StorefrontProvider session={session}><a className="skip-link" href="#main-content">Skip to main content</a><SiteHeader categories={categories} /><div id="main-content" tabIndex={-1}>{children}</div></StorefrontProvider></body></html>;
+  return <html lang="en" className={`${body.variable} ${display.variable}`}><body><StorefrontProvider session={session}><a className="skip-link" href="#main-content">Skip to main content</a><SiteHeader categories={categories} /><div id="main-content" tabIndex={-1}>{children}</div><BottomNav /><SearchMode categories={categories} /></StorefrontProvider></body></html>;
 }

@@ -9,13 +9,15 @@ import { ProductVisual } from "@/components/ui/product-visual";
 import { commerceCopy } from "@/content/commerce";
 import { formatMoney } from "@/lib/api";
 import { motionTokens } from "@/lib/motion";
+import { useSavedStore } from "@/store/saved-store";
 import type { ProductCardModel } from "@/lib/types";
 
 type AddState = "idle" | "loading" | "success" | "error";
 
 export function ProductCard({ product, onAdd, priority = false }: { product: ProductCardModel; onAdd?: (variantId: string) => Promise<void>; priority?: boolean }) {
   const [addState, setAddState] = useState<AddState>("idle");
-  const [saved, setSaved] = useState(false);
+  const saved = useSavedStore((state) => state.ids.includes(product.id));
+  const toggleSaved = useSavedStore((state) => state.toggle);
   const reducedMotion = useReducedMotion();
   const unavailable = product.availabilityHint === "out_of_stock";
 
@@ -56,7 +58,7 @@ export function ProductCard({ product, onAdd, priority = false }: { product: Pro
             <ProductVisual slug={product.slug} title={product.title} />
           </motion.div>
         </Link>
-        <button className="product-card__save" type="button" aria-label={saved ? `Remove ${product.title} from saved items` : `Save ${product.title} for later`} aria-pressed={saved} onClick={() => setSaved((value) => !value)}>
+        <button className="product-card__save" type="button" aria-label={saved ? `Remove ${product.title} from saved items` : `Save ${product.title} for later`} aria-pressed={saved} onClick={() => toggleSaved(product.id)}>
           <HeartIcon fill={saved ? "currentColor" : "none"} />
         </button>
         {product.badges.includes("featured") ? <span className="product-card__badge">Editor&apos;s pick</span> : null}
