@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Link, useLocalizedRouter } from "@/components/providers/locale-provider";
+
 import { FormEvent, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
@@ -10,7 +10,7 @@ import type { CheckoutResult, Payment, ShippingAddress } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
 
 export function CheckoutForm() {
-  const router = useRouter();
+  const router = useLocalizedRouter();
   const { cart, status, error: cartError, isLoading, load } = useCartStore();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

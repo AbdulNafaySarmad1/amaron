@@ -4,6 +4,7 @@ import { appUrl, cookieOptions, loginCookieName, sessionCookieName, sessionTtlSe
 import { authError } from "@/lib/auth/http";
 import { oidcConfiguration } from "@/lib/auth/oidc";
 import { createSession, randomOpaqueValue, takeLoginTransaction } from "@/lib/auth/session";
+import { ACCOUNT_LOCALE_COOKIE, isLocale, PREFERENCE_MAX_AGE } from "@/i18n/config";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,9 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(new URL(transaction.returnTo, baseUrl));
     response.cookies.delete(loginCookieName);
     response.cookies.set(sessionCookieName, sessionId, { ...cookieOptions, maxAge: sessionTtlSeconds });
+    // The OIDC "locale" claim is the account language preference; it outranks the device cookie on unprefixed URLs.
+    const accountLocale = typeof claims.locale === "string" ? claims.locale.toLowerCase().split("-")[0] : undefined;
+    if (isLocale(accountLocale)) response.cookies.set(ACCOUNT_LOCALE_COOKIE, accountLocale, { path: "/", sameSite: "lax", secure: cookieOptions.secure, maxAge: PREFERENCE_MAX_AGE });
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error) {

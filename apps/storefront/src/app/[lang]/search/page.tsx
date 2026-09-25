@@ -1,5 +1,8 @@
-import Link from "next/link";
+import { Untranslated } from "@/components/i18n/untranslated";
+import { Link } from "@/components/providers/locale-provider";
 import { ProductGrid } from "@/components/product/product-grid";
+import { currentLocale } from "@/i18n/server";
+import { localizePath } from "@/i18n/config";
 import { serverGet } from "@/lib/api";
 import type { Category, ProductPage } from "@/lib/types";
 
@@ -13,7 +16,8 @@ function value(parameters: SearchParameters, key: string) {
 }
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<SearchParameters> }) {
-  const parameters = await searchParams;
+  const [parameters, locale] = await Promise.all([searchParams, currentLocale()]);
+  const searchPath = localizePath(locale, "/search");
   const query = new URLSearchParams();
   for (const key of ["q", "category", "brand", "minPrice", "maxPrice", "minimumRating", "available", "sort", "page"]) {
     const entry = value(parameters, key);
@@ -35,6 +39,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   }
 
   return (
+    <Untranslated>
     <main className="search-page">
       <header className="search-page__header">
         <p className="eyebrow">Browse the collection</p>
@@ -43,7 +48,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
       </header>
       <div className="search-layout">
         <aside className="filters">
-          <form action="/search" method="get">
+          <form action={searchPath} method="get">
             {searchTerm ? <input type="hidden" name="q" value={searchTerm} /> : null}
             <fieldset><legend>Category</legend><label><input type="radio" name="category" value="" defaultChecked={!category} /> All goods</label>{categories.map((item) => <label key={item.id}><input type="radio" name="category" value={item.slug} defaultChecked={category === item.slug} /> {item.name}</label>)}</fieldset>
             <fieldset><legend>Price</legend><div className="price-inputs"><label><span>Min</span><input type="number" name="minPrice" min="0" placeholder="$0" defaultValue={value(parameters, "minPrice")} /></label><label><span>Max</span><input type="number" name="maxPrice" min="0" placeholder="$500" defaultValue={value(parameters, "maxPrice")} /></label></div></fieldset>
@@ -54,7 +59,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           </form>
         </aside>
         <section className="results" aria-label="Search results">
-          <form className="sort-form" action="/search" method="get">
+          <form className="sort-form" action={searchPath} method="get">
             {Array.from(query.entries()).filter(([key]) => !["sort", "page", "pageSize"].includes(key)).map(([key, entry]) => <input key={key} type="hidden" name={key} value={entry} />)}
             <label htmlFor="sort">Sort by</label><select id="sort" name="sort" defaultValue={value(parameters, "sort") ?? ""}><option value="">Name</option><option value="newest">Newest</option><option value="rating">Top rated</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option></select><button type="submit">Update</button>
           </form>
@@ -63,5 +68,6 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         </section>
       </div>
     </main>
+    </Untranslated>
   );
 }

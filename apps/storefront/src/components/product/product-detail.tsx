@@ -1,24 +1,23 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Link, useIntlLocale, useT } from "@/components/providers/locale-provider";
+import { useRequireSignIn } from "@/components/shell/sign-in-gate";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
-import { useStorefrontSession } from "@/components/providers/storefront-provider";
 import { ProductGrid } from "@/components/product/product-grid";
 import { Button } from "@/components/ui/button";
 import { ProductVisual } from "@/components/ui/product-visual";
-import { commerceCopy } from "@/content/commerce";
 import { formatMoney } from "@/lib/api";
 import { motionTokens } from "@/lib/motion";
 import type { StorefrontProduct } from "@/lib/types";
 import { useCartStore } from "@/store/cart-store";
 
 export function ProductDetailView({ data }: { data: StorefrontProduct }) {
+  const t = useT();
+  const intl = useIntlLocale();
   const { product, recommendations } = data;
-  const session = useStorefrontSession();
-  const router = useRouter();
+  const requireSignIn = useRequireSignIn();
   const [variantId, setVariantId] = useState(product.variants.find((variant) => variant.availabilityHint !== "out_of_stock")?.id ?? product.variants[0]?.id ?? "");
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const add = useCartStore((store) => store.add);
@@ -28,10 +27,7 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
 
   async function addSelected() {
     if (!selected || unavailable) return;
-    if (!session.authenticated) {
-      router.push(`/api/auth/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-      return;
-    }
+    if (!requireSignIn("bag")) return;
     setState("loading");
     try {
       await add(selected.id);
@@ -54,12 +50,12 @@ export function ProductDetailView({ data }: { data: StorefrontProduct }) {
           <p className="eyebrow">{product.brand} · {product.category}</p>
           <h1>{product.title}</h1>
           <div className="product-info__rating"><StarIcon /><strong>{product.rating.toFixed(1)}</strong><span>{product.reviewCount} reviews</span></div>
-          <div className="product-info__price"><strong>{selected ? formatMoney(selected.price) : "Unavailable"}</strong>{selected?.listPrice ? <s>{formatMoney(selected.listPrice)}</s> : null}</div>
+          <div className="product-info__price"><strong>{selected ? formatMoney(selected.price, intl) : "Unavailable"}</strong>{selected?.listPrice ? <s>{formatMoney(selected.listPrice, intl)}</s> : null}</div>
           <p className="product-info__description">{product.description}</p>
 
-          {product.variants.length > 1 ? <fieldset className="variant-picker"><legend>Choose an option</legend>{product.variants.map((variant) => <label key={variant.id}><input type="radio" name="variant" value={variant.id} checked={variantId === variant.id} onChange={() => setVariantId(variant.id)} disabled={variant.availabilityHint === "out_of_stock"} /><span>{variant.name}<small>{formatMoney(variant.price)}</small></span></label>)}</fieldset> : null}
-          <p className={`stock-line stock-line--${selected?.availabilityHint ?? "out_of_stock"}`}><span />{selected ? commerceCopy.availability[selected.availabilityHint as keyof typeof commerceCopy.availability] : commerceCopy.availability.out_of_stock}</p>
-          <Button size="large" className="product-info__add" busy={state === "loading"} disabled={unavailable} onClick={addSelected}>{state === "success" ? commerceCopy.addToCart.success : state === "error" ? "Try again" : commerceCopy.addToCart.idle}</Button>
+          {product.variants.length > 1 ? <fieldset className="variant-picker"><legend>Choose an option</legend>{product.variants.map((variant) => <label key={variant.id}><input type="radio" name="variant" value={variant.id} checked={variantId === variant.id} onChange={() => setVariantId(variant.id)} disabled={variant.availabilityHint === "out_of_stock"} /><span>{variant.name}<small>{formatMoney(variant.price, intl)}</small></span></label>)}</fieldset> : null}
+          <p className={`stock-line stock-line--${selected?.availabilityHint ?? "out_of_stock"}`}><span />{selected ? t.availability[selected.availabilityHint as keyof typeof t.availability] : t.availability.out_of_stock}</p>
+          <Button size="large" className="product-info__add" busy={state === "loading"} disabled={unavailable} onClick={addSelected}>{state === "success" ? t.addToCart.success : state === "error" ? t.addToCart.error : t.addToCart.idle}</Button>
           {state === "success" ? <button className="text-button product-info__view-cart" onClick={() => void open()}>View your cart</button> : null}
           <ul className="product-promises"><li><CheckIcon /><span><strong>30-day returns</strong>Change your mind, no awkward questions.</span></li><li><CheckIcon /><span><strong>Thoughtful delivery</strong>Tracked and packed without excess.</span></li><li><CheckIcon /><span><strong>Real support</strong>Helpful humans, when you need one.</span></li></ul>
         </motion.div>

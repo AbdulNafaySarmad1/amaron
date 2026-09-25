@@ -1,3 +1,4 @@
+import { Untranslated } from "@/components/i18n/untranslated";
 import { notFound } from "next/navigation";
 import { ProductDetailView } from "@/components/product/product-detail";
 import { ApiError, serverGet } from "@/lib/api";
@@ -14,5 +15,5 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-  return <ProductDetailView data={data} />;
+  return <Untranslated><ProductDetailView data={data} /></Untranslated>;
 }

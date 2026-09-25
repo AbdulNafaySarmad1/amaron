@@ -1,0 +1,116 @@
+{
+  "nav": {
+    "skip": "Skip to main content",
+    "home": "Home",
+    "discover": "Discover",
+    "explore": "Explore",
+    "categories": "Categories",
+    "shopBySpace": "Shop by space",
+    "saved": "Saved",
+    "savedCount": "Saved, {count} items",
+    "account": "Account",
+    "signIn": "Sign in",
+    "signedInAs": "Signed in as",
+    "yourAccount": "Your account",
+    "orders": "Orders",
+    "profile": "Profile and security",
+    "signOut": "Sign out",
+    "bag": "Bag",
+    "bagCount": "Bag, {count} items",
+    "bagSignIn": "Bag, sign in to use",
+    "primary": "Primary"
+  },
+  "search": {
+    "label": "Search the store",
+    "placeholder": "Search products, brands and categories",
+    "trigger": "Search",
+    "close": "Close search",
+    "suggestions": "Suggestions",
+    "loading": "Looking…",
+    "recent": "Recent searches",
+    "clearRecent": "Clear recent searches",
+    "browse": "Browse a space",
+    "browseHint": "Browse",
+    "products": "Products",
+    "spaces": "Spaces",
+    "allResults": "All results",
+    "seeAll": "See all results for “{query}”",
+    "empty": "We couldn't find anything for “{query}”.",
+    "emptyHint": "Try checking the spelling or using fewer words.",
+    "unavailable": "Suggestions are unavailable right now. Press Enter to search anyway."
+  },
+  "addToCart": {
+    "idle": "Add to bag",
+    "loading": "Adding…",
+    "success": "Added ✓",
+    "error": "Try again",
+    "unavailable": "Currently unavailable"
+  },
+  "cart": {
+    "title": "Your bag",
+    "emptyTitle": "Your bag is empty",
+    "emptyBody": "Anything you add will wait here until you're ready.",
+    "startShopping": "Start exploring",
+    "viewCart": "View bag",
+    "added": "Added to your bag",
+    "removed": "Removed from your bag",
+    "items": "{count} items",
+    "close": "Close bag",
+    "loading": "Loading your bag…",
+    "loadError": "Your bag could not be loaded.",
+    "retry": "Try again",
+    "quantityFor": "Quantity for {title}",
+    "decrease": "Decrease quantity",
+    "increase": "Increase quantity",
+    "remove": "Remove",
+    "subtotal": "Subtotal",
+    "taxesNote": "Taxes and delivery are calculated at checkout.",
+    "checkout": "Continue to checkout"
+  },
+  "availability": {
+    "in_stock": "In stock",
+    "low_stock": "Limited availability",
+    "out_of_stock": "Currently unavailable"
+  },
+  "product": {
+    "save": "Save {title} for later",
+    "unsave": "Remove {title} from saved items",
+    "view": "View {title}",
+    "rating": "{rating} out of 5 stars from {count} reviews",
+    "editorsPick": "Editor's pick"
+  },
+  "saved": {
+    "title": "Saved",
+    "lede": "Things worth a second look. Prices and availability are always current.",
+    "loading": "Loading saved items…",
+    "emptyTitle": "Nothing saved yet",
+    "emptyBody": "Tap the heart on anything worth a second look. Saved items stay on this device.",
+    "unavailable": "Some saved items are no longer available and have been hidden.",
+    "failedTitle": "Saved items didn't load",
+    "failedBody": "Your list is safe on this device. Check your connection and try again.",
+    "retry": "Try again"
+  },
+  "preferences": {
+    "title": "Region and language",
+    "shipTo": "Ship to",
+    "currency": "Currency",
+    "language": "Language",
+    "save": "Save",
+    "cancel": "Cancel",
+    "currencyNote": "Checkout is charged in US dollars for now. Other currencies arrive with local pricing.",
+    "detectedHint": "Suggested from your connection. Change it any time."
+  },
+  "notFound": {
+    "title": "This page wandered off",
+    "body": "The link may be old, or the item may have moved.",
+    "home": "Back to the store"
+  },
+  "gate": {
+    "bagTitle": "Sign in to use your bag",
+    "bagBody": "Your bag is kept with your account, so it follows you to any device. Browsing, searching and saving work without one.",
+    "reviewTitle": "Sign in to join the conversation",
+    "reviewBody": "Reviews and questions are tied to an account so everyone can trust them. Reading them never needs one.",
+    "signIn": "Sign in",
+    "keepBrowsing": "Keep browsing"
+  }
+}

@@ -6,6 +6,20 @@ The Next.js App Router uses Server Components for public route data acquisition 
 
 Public commerce routes are request-rendered to keep image builds independent of API availability. API and HybridCache policies provide the active public caching layer. Search is request-dependent. Private shopper calls are browser-only and `no-store` at both BFF and API.
 
+## Language, region and currency
+
+Every page lives under `/{locale}` (`en`, `ru`, `ur`, `ar`) in `app/[lang]`; API routes stay at `/api`. `src/proxy.ts` redirects a URL without a locale using, in order: the account preference (the OIDC `locale` claim, mirrored into `amaron-account-locale` at sign-in), the `amaron-locale` cookie, `Accept-Language`, then English. A locale in the URL is always honoured. Language is never derived from location.
+
+Region (`amaron-region`, ship-to country and currency) is separate. Without a saved region, Cloudflare's `CF-IPCountry` suggests one on first visit; it never binds the shopper. Only currencies the pricing service can charge are selectable (USD today), so no price is shown that checkout cannot honour.
+
+UI strings live in `src/i18n/dictionaries/*.json`; a missing translation falls back to English, and a unit test fails if a translation drifts from the English keys or placeholders. Client components read strings with `useT()` and link with the locale-aware `Link` and `useLocalizedRouter()` from `locale-provider`. `ur` and `ar` render `dir="rtl"`; layout CSS uses logical properties only. Script faces (Noto Serif for Cyrillic headings, Noto Naskh Arabic, Noto Nastaliq Urdu) are not preloaded and download only for pages that use them; see the font-stack note in `globals.css` before reordering families.
+
+Content without a translation is marked as English so it is laid out left-to-right and read correctly by screen readers: whole pages via `<Untranslated>` (remove it once a page's copy is in the dictionaries), and catalog names via `lang={CATALOG_LANG} dir="auto"`. Arabic-script CSS rules use `x:lang(ur)`, never `:lang(ur) x`, so they do not reach nested English content.
+
+## Guests and account-only actions
+
+Browsing, search and Saved work without an account. Account-only actions (the bag today, reviews later) call `useRequireSignIn()` from `sign-in-gate.tsx`; for guests it opens a prompt explaining why, with sign-in returning to the same page and query. Sign-out returns to the homepage in the language the shopper was using.
+
 ## Identity BFF
 
 `/api/auth/login` starts OIDC authorization code flow with S256 PKCE, state, nonce, a ten-minute Redis transaction, and a sanitized local `returnTo`. `/api/auth/callback` validates that transaction and creates an eight-hour-by-default Redis session. Production cookies use `__Host-` names and are Secure, HttpOnly, SameSite=Lax, and path `/`; their values are random session IDs, not tokens. `/api/auth/session` exposes only authentication state, display name, and the session CSRF token. Logout deletes the session before returning the provider end-session URL.

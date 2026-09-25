@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/components/providers/locale-provider";
 import { useEffect, useState } from "react";
 import { browserRequest, formatMoney } from "@/lib/api";
 import type { Order } from "@/lib/types";

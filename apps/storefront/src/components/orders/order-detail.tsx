@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/components/providers/locale-provider";
 import { useEffect, useState } from "react";
 import { CheckIcon } from "@/components/icons";
 import { browserRequest, formatMoney } from "@/lib/api";

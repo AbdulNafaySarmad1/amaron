@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
     optimizePackageImports: ["motion", "@react-three/drei"],
+    globalNotFound: true,
   },
   async headers() {
     return [{ source: "/(.*)", headers: [

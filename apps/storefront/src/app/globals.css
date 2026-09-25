@@ -395,6 +395,22 @@ button { color: inherit; }
 .t-caption { color: var(--ink-faint); font-size: var(--type-caption); font-weight: 800; letter-spacing: var(--tracking-wide); text-transform: uppercase; }
 [dir="rtl"] .flip-rtl { transform: scaleX(-1); }
 
+/* Scripts. Order is brand face, script face, then next/font's metric fallback. The brand faces have no Arabic
+   or Cyrillic-serif glyphs, so those characters fall through to the script face, while Latin never reaches it
+   (next/font emits every subset of a script face, including Latin). The metric fallback (local Arial/Times,
+   which covers all scripts) must come last or it would swallow Cyrillic and Arabic. */
+:root:lang(ru) { --font-serif: "Fraunces", "Noto Serif", "Fraunces Fallback", Georgia, serif; }
+:root:lang(ar) { --font-sans: "Manrope", "Noto Naskh Arabic", "Manrope Fallback", sans-serif; --font-serif: "Fraunces", "Noto Naskh Arabic", "Fraunces Fallback", serif; }
+:root:lang(ur) { --font-sans: "Manrope", "Noto Nastaliq Urdu", "Manrope Fallback", sans-serif; --font-serif: "Fraunces", "Noto Nastaliq Urdu", "Fraunces Fallback", serif; }
+/* Arabic-script text must not be letter-spaced (it breaks joining), and Nastaliq needs tall lines. */
+:is(:lang(ar), :lang(ur)) { letter-spacing: 0 !important; }
+:lang(ur) body { line-height: 2; }
+/* English content on an Urdu/Arabic page (untranslated pages, catalog names) keeps English typography. */
+.untranslated { display: contents; }
+:root:not(:lang(en)) [lang="en"] { line-height: var(--leading-body); }
+:is(h1, h2, h3, .t-display, .t-h1, .t-h2, .t-h3, .t-product):lang(ar) { line-height: 1.35; }
+:is(h1, h2, h3, .t-display, .t-h1, .t-h2, .t-h3, .t-product, .wordmark):lang(ur) { line-height: 1.75; }
+
 /* Shell */
 .site-header { background: var(--canvas); border-bottom: var(--border-subtle); position: sticky; top: 0; z-index: var(--z-header); }
 .site-header__inner { align-items: center; display: grid; gap: clamp(0.75rem, 2vw, 2rem); grid-template-columns: auto auto minmax(10rem, 1fr) auto; margin-inline: auto; max-width: 96rem; min-height: var(--header-height); padding: var(--space-2) clamp(1rem, 4vw, 3.5rem); }
@@ -423,6 +439,10 @@ button { color: inherit; }
 .header-popover--account { display: grid; gap: var(--space-2); inset-inline-end: clamp(1rem, 4vw, 3.5rem); min-width: 15rem; }
 .header-popover--account:not(:popover-open) { display: none; }
 .header-popover--account a, .header-popover--account .text-button { border-top: var(--border-subtle); color: var(--ink); font-size: var(--type-ui); min-height: var(--target-min); padding-top: var(--space-3); text-align: start; text-decoration: none; }
+.header-popover--preferences { inset-inline-end: clamp(1rem, 4vw, 3.5rem); width: min(22rem, calc(100vw - 2rem)); }
+.preferences { display: grid; gap: var(--space-4); }
+.preferences .field select { background: var(--surface-raised); border: var(--border-subtle); border-radius: var(--radius-sm); min-height: var(--target-min); padding-inline: var(--space-3); }
+.preferences .button { width: 100%; }
 .bottom-nav { display: none; }
 
 /* Search mode */
@@ -445,6 +465,17 @@ button { color: inherit; }
 .search-mode__option--all { border-radius: 0; border-top: var(--border-subtle); font-weight: 720; margin-top: var(--space-2); padding-top: var(--space-4); }
 .search-mode__status { color: var(--ink-soft); font-size: var(--type-meta); margin: var(--space-4) var(--space-3) 0; min-height: 1.2em; }
 .search-mode__clear { margin-inline-start: var(--space-3); }
+
+/* Sign-in prompt for account-only actions */
+.sign-in-gate { background: transparent; border: 0; margin: auto; max-width: min(28rem, calc(100vw - 2rem)); padding: 0; width: 100%; } /* margin: auto restores the centring Tailwind preflight removes */
+.sign-in-gate::backdrop { background: rgb(10 18 15 / 0.42); }
+.sign-in-gate[open] .sign-in-gate__panel { animation: search-mode-in var(--duration-standard) var(--ease-enter); }
+.sign-in-gate__panel { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--elevation-overlay); color: var(--ink); display: grid; gap: var(--space-3); padding: var(--space-8) var(--space-6) var(--space-6); position: relative; }
+.sign-in-gate__panel p { color: var(--ink-soft); margin: 0; }
+.sign-in-gate__close { inset-inline-end: var(--space-3); position: absolute; top: var(--space-3); }
+.sign-in-gate__panel h2 { padding-inline-end: var(--space-10); }
+.sign-in-gate__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
+.sign-in-gate__actions .button { flex: 1 1 10rem; }
 
 /* Page scaffolding and shared states */
 .page { margin-inline: auto; max-width: 96rem; min-height: 60svh; padding: clamp(2rem, 5vw, 4.5rem) clamp(1rem, 4vw, 3.5rem) var(--space-section); }
@@ -511,7 +542,7 @@ button { color: inherit; }
   .site-header__inner { grid-template-columns: 1fr auto; }
   .primary-nav, .search-trigger, .header-action__label, .header-action--saved, .header-action--bag { display: none; }
   .header-action--search { display: inline-flex; }
-  .header-popover--account { inset-inline: var(--space-4); }
+  .header-popover--account, .header-popover--preferences { inset-inline: var(--space-4); width: auto; }
   .bottom-nav { background: var(--surface); border-top: var(--border-subtle); bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); inset-inline: 0; padding-bottom: env(safe-area-inset-bottom); position: fixed; z-index: var(--z-header); }
   .bottom-nav > a, .bottom-nav > button { align-items: center; background: none; border: 0; color: var(--ink-soft); cursor: pointer; display: flex; flex-direction: column; font-size: 0.7rem; font-weight: 720; gap: 0.2rem; justify-content: center; min-height: var(--bottom-nav-height); position: relative; }
   .bottom-nav > [aria-current="page"] { color: var(--ink); }

@@ -1,16 +1,21 @@
 "use client";
 
-import Link from "next/link";
+import { Link, useIntlLocale, useLocale, useT } from "@/components/providers/locale-provider";
+import { CATALOG_LANG, localeDirection } from "@/i18n/config";
+import { format } from "@/i18n/dictionary";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { CloseIcon, MinusIcon, PlusIcon } from "@/components/icons";
 import { ProductVisual } from "@/components/ui/product-visual";
-import { commerceCopy } from "@/content/commerce";
 import { formatMoney } from "@/lib/api";
 import { motionTokens } from "@/lib/motion";
 import { useCartStore } from "@/store/cart-store";
 
 export function CartDrawer() {
+  const t = useT();
+  const intl = useIntlLocale();
+  // The drawer sits on the inline-end edge, so in right-to-left languages it enters from the left.
+  const offscreen = localeDirection(useLocale()) === "rtl" ? "-100%" : "100%";
   const { cart, status, isOpen, isLoading, error, load, close, setQuantity, remove } = useCartStore();
   const reducedMotion = useReducedMotion();
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -40,32 +45,32 @@ export function CartDrawer() {
     <AnimatePresence>
       {isOpen ? (
         <div className="cart-layer">
-          <motion.button type="button" className="cart-backdrop" aria-label="Close cart" onClick={close} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+          <motion.button type="button" className="cart-backdrop" aria-label={t.cart.close} onClick={close} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
           <motion.aside
             ref={drawer}
             className="cart-drawer"
             role="dialog"
             aria-modal="true"
             aria-labelledby="cart-title"
-            initial={reducedMotion ? { opacity: 0 } : { x: "100%" }}
+            initial={reducedMotion ? { opacity: 0 } : { x: offscreen }}
             animate={reducedMotion ? { opacity: 1 } : { x: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { x: "100%" }}
+            exit={reducedMotion ? { opacity: 0 } : { x: offscreen }}
             transition={motionTokens.spring.drawer}
           >
             <header className="cart-drawer__header">
-              <div><p className="eyebrow">{cart?.totalQuantity ?? 0} items</p><h2 id="cart-title">{commerceCopy.cart.title}</h2></div>
-              <button ref={closeButton} className="icon-button" onClick={close} aria-label="Close cart"><CloseIcon /></button>
+              <div><p className="eyebrow">{format(t.cart.items, { count: cart?.totalQuantity ?? 0 })}</p><h2 id="cart-title">{t.cart.title}</h2></div>
+              <button ref={closeButton} className="icon-button" onClick={close} aria-label={t.cart.close}><CloseIcon /></button>
             </header>
             <div className="cart-drawer__body" aria-busy={isLoading}>
-              {status === "error" && !cart ? <div className="cart-load-error" role="alert"><p>{error ?? "The cart could not be loaded."}</p><button className="button button--secondary button--small" onClick={() => void load()}>Try again</button></div> : null}
-              {status === "loading" && !cart ? <p role="status">Loading your cart…</p> : null}
+              {status === "error" && !cart ? <div className="cart-load-error" role="alert"><p>{error ?? t.cart.loadError}</p><button className="button button--secondary button--small" onClick={() => void load()}>{t.cart.retry}</button></div> : null}
+              {status === "loading" && !cart ? <p role="status">{t.cart.loading}</p> : null}
               {error && cart ? <p className="inline-error" role="alert">{error}</p> : null}
               {status === "ready" && !cart?.items.length ? (
                 <div className="cart-empty">
                   <span className="cart-empty__mark">0</span>
-                  <h3>{commerceCopy.cart.emptyTitle}</h3>
-                  <p>{commerceCopy.cart.emptyBody}</p>
-                  <Link className="button button--primary button--medium" href="/search" onClick={close}>{commerceCopy.cart.startShopping}</Link>
+                  <h3>{t.cart.emptyTitle}</h3>
+                  <p>{t.cart.emptyBody}</p>
+                  <Link className="button button--primary button--medium" href="/search" onClick={close}>{t.cart.startShopping}</Link>
                 </div>
               ) : cart?.items.length ? (
                 <ul className="cart-lines">
@@ -73,16 +78,16 @@ export function CartDrawer() {
                     <li key={item.variantId} className="cart-line">
                       <Link className="cart-line__visual" href={`/products/${item.slug}`} onClick={close}><ProductVisual compact slug={item.slug} title={item.title} /></Link>
                       <div className="cart-line__details">
-                        <Link href={`/products/${item.slug}`} onClick={close}><strong>{item.title}</strong></Link>
-                        <span>{item.variant}</span>
-                        <strong>{formatMoney(item.lineTotal)}</strong>
+                        <Link href={`/products/${item.slug}`} onClick={close}><strong lang={CATALOG_LANG} dir="auto">{item.title}</strong></Link>
+                        <span lang={CATALOG_LANG} dir="auto">{item.variant}</span>
+                        <strong>{formatMoney(item.lineTotal, intl)}</strong>
                         <div className="cart-line__actions">
-                          <div className="quantity-stepper" aria-label={`Quantity for ${item.title}`}>
-                            <button aria-label="Decrease quantity" disabled={isLoading} onClick={() => void setQuantity(item.variantId, item.quantity - 1)}><MinusIcon /></button>
+                          <div className="quantity-stepper" aria-label={format(t.cart.quantityFor, { title: item.title })}>
+                            <button aria-label={t.cart.decrease} disabled={isLoading} onClick={() => void setQuantity(item.variantId, item.quantity - 1)}><MinusIcon /></button>
                             <span aria-live="polite">{item.quantity}</span>
-                            <button aria-label="Increase quantity" disabled={isLoading || item.quantity >= 99} onClick={() => void setQuantity(item.variantId, item.quantity + 1)}><PlusIcon /></button>
+                            <button aria-label={t.cart.increase} disabled={isLoading || item.quantity >= 99} onClick={() => void setQuantity(item.variantId, item.quantity + 1)}><PlusIcon /></button>
                           </div>
-                          <button className="text-button" disabled={isLoading} onClick={() => void remove(item.variantId)}>Remove</button>
+                          <button className="text-button" disabled={isLoading} onClick={() => void remove(item.variantId)}>{t.cart.remove}</button>
                         </div>
                       </div>
                     </li>
@@ -92,9 +97,9 @@ export function CartDrawer() {
             </div>
             {cart?.items.length ? (
               <footer className="cart-drawer__footer">
-                <div><span>Subtotal</span><strong>{formatMoney(cart.subtotal)}</strong></div>
-                <p>Taxes and delivery are calculated at checkout.</p>
-                <Link className="button button--primary button--large" href="/checkout" onClick={close}>Continue to checkout</Link>
+                <div><span>{t.cart.subtotal}</span><strong>{formatMoney(cart.subtotal, intl)}</strong></div>
+                <p>{t.cart.taxesNote}</p>
+                <Link className="button button--primary button--large" href="/checkout" onClick={close}>{t.cart.checkout}</Link>
               </footer>
             ) : null}
           </motion.aside>

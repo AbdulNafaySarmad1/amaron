@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/components/providers/locale-provider";
 import { motion } from "motion/react";
 import { ArrowIcon } from "@/components/icons";
 import { HeroExperience } from "@/components/home/hero-experience";
